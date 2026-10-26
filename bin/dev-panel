@@ -30,7 +30,13 @@ start() {
     return
   fi
   cd "$DIR"
-  nohup node server.js >>"$LOG" 2>&1 &
+  # Свой systemd-scope: иначе панель живёт в cgroup терминала/tmux, из которого её запустили,
+  # и systemd-oomd убивает её вместе с чужим прожорливым процессом. --scope делает exec, $! = pid node.
+  local scope=()
+  if systemd-run --user --scope --quiet --collect true >/dev/null 2>&1; then
+    scope=(systemd-run --user --scope --quiet --collect --unit="dev-panel-$(date +%s)")
+  fi
+  nohup "${scope[@]}" node server.js >>"$LOG" 2>&1 &
   echo $! >"$PIDFILE"
   for _ in $(seq 1 50); do curl -fs "$URL/api/config" >/dev/null 2>&1 && break; sleep 0.1; done
   echo "Dev Panel запущена: $URL (лог: $LOG)"
