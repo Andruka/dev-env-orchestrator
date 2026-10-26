@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Dev Panel launcher.
-#   dev-panel           запустить в фоне (если ещё не запущена) и открыть в браузере
+#   dev-panel           запустить в фоне (если ещё не запущена) и открыть в отдельном окне
+#   dev-panel web       то же, но открыть во вкладке обычного браузера
 #   dev-panel stop      остановить (вместе с запущенными из панели dup / npm start)
 #   dev-panel restart   перезапустить
 #   dev-panel status    запущена ли
@@ -46,10 +47,31 @@ stop() {
   rm -f "$PIDFILE"
 }
 
-open_ui() { xdg-open "$URL" >/dev/null 2>&1 & }
+# Отдельное окно браузера в режиме приложения: без вкладок и адресной строки, свой профиль и свой
+# WM_CLASS (своя иконка в панели задач). Повторный запуск активирует уже открытое окно.
+APP_CLASS="DevPanel"
+APP_PROFILE="${XDG_CONFIG_HOME:-$HOME/.config}/dev-panel/app-browser"
+
+app_browser() {
+  if [[ -n "${DEV_PANEL_BROWSER:-}" ]]; then echo "$DEV_PANEL_BROWSER"; return; fi
+  for b in brave-browser google-chrome chromium chromium-browser; do
+    command -v "$b" >/dev/null && { echo "$b"; return; }
+  done
+}
+
+open_ui() {
+  if command -v xdotool >/dev/null && xdotool search --class "$APP_CLASS" >/dev/null 2>&1; then
+    xdotool search --class "$APP_CLASS" | tail -1 | xargs -r xdotool windowactivate >/dev/null 2>&1 && return
+  fi
+  local b; b="$(app_browser)"
+  if [[ -z "$b" ]]; then xdg-open "$URL" >/dev/null 2>&1 & return; fi
+  nohup "$b" --app="$URL" --class="$APP_CLASS" --user-data-dir="$APP_PROFILE" \
+    --no-first-run --no-default-browser-check --window-size=1500,950 >/dev/null 2>&1 &
+}
 
 case "${1:-open}" in
   open)    start; open_ui ;;
+  web)     start; xdg-open "$URL" >/dev/null 2>&1 & ;;
   start)   start ;;
   stop)    stop ;;
   restart) stop; start ;;
@@ -75,5 +97,5 @@ DESKTOP
       off) rm -f "$AUTOSTART"; echo "Автозапуск выключен" ;;
       *) [[ -f "$AUTOSTART" ]] && echo "Автозапуск включён ($AUTOSTART)" || echo "Автозапуск выключен" ;;
     esac ;;
-  *)       sed -n '2,9p' "$0"; exit 1 ;;
+  *)       sed -n '2,10p' "$0"; exit 1 ;;
 esac
