@@ -9,7 +9,11 @@
     "dbName": "calplanDb",
     "frontendUrl": "http://localhost:3000/objects/3140/plans",
     "browserProfile": "/home/andrey/.config/brave-dev-cors",
-    "debugPort": 9222
+    "debugPort": 9222,
+    "migrationsDir": "src/AusPlan/Database/Migration",
+    "snapshotsKeepFresh": 8,
+    "snapshotsKeepDump": 2,
+    "dc": "docker compose -f {composeFile}"
   },
   "groups": [
     {
@@ -43,6 +47,14 @@
             "down",
             "dbRm"
           ]
+        },
+        {
+          "title": "Снимки БД",
+          "actions": [
+            "snapSave",
+            "snapRestore",
+            "snapDelete"
+          ]
         }
       ],
       "primary": "deploy"
@@ -70,6 +82,7 @@
             "frontDeploy",
             "quickStart",
             "npmCi",
+            "npmCiForce",
             "npmStart",
             "npmStop",
             "browser",
@@ -113,7 +126,7 @@
     },
     "down": {
       "title": "ddown",
-      "hint": "Остановить контейнеры (все контейнеры docker)",
+      "hint": "Остановить контейнеры (все контейнеры docker; БД — штатно, остальное — за 2 с)",
       "icon": "■",
       "steps": [
         {
@@ -122,14 +135,19 @@
           "service": "compose"
         },
         {
-          "title": "docker compose down",
+          "title": "Остановить БД (штатно)",
           "type": "shell",
-          "cmd": "docker compose -f {composeFile} down"
+          "cmd": "docker ps -q --filter 'name=calplanDb' | xargs -r docker stop -t 60 >/dev/null; echo ok"
         },
         {
-          "title": "Остановить и удалить все контейнеры",
+          "title": "docker compose down",
           "type": "shell",
-          "cmd": "docker ps -aq | xargs -r docker stop; docker ps -aq | xargs -r docker rm"
+          "cmd": "{dc} down -t 2"
+        },
+        {
+          "title": "Остановить и удалить остальные контейнеры",
+          "type": "shell",
+          "cmd": "docker ps -aq | xargs -r docker stop -t 2 >/dev/null; docker ps -aq | xargs -r docker rm >/dev/null; echo ok"
         }
       ]
     },
@@ -164,7 +182,7 @@
     },
     "deploy": {
       "title": "Развернуть с нуля",
-      "hint": "ddown → dbRm → dup",
+      "hint": "ddown → dbRm → снимок (если есть) → dup → сохранить снимок",
       "icon": "⟳",
       "confirm": "Развернуть {project.name} с нуля? База будет удалена.",
       "steps": [
@@ -177,15 +195,32 @@
           "action": "dbRm"
         },
         {
+          "title": "Восстановить снимок миграций",
+          "type": "snapshotRestore",
+          "kind": "fresh",
+          "dataDir": "{dbDataDir}",
+          "migrationsDir": "{migrationsDir}"
+        },
+        {
           "type": "action",
           "action": "up"
+        },
+        {
+          "title": "Сохранить снимок миграций",
+          "type": "snapshotSave",
+          "kind": "fresh",
+          "dataDir": "{dbDataDir}",
+          "migrationsDir": "{migrationsDir}",
+          "keep": "{snapshotsKeepFresh}",
+          "stopCmd": "{dc} stop -t 60 {dbService}",
+          "startCmd": "{dc} ps -a --status exited -q {dbService} | grep -q . && {dc} start {dbService} || true"
         }
       ],
       "danger": true
     },
     "restoreDump": {
       "title": "Накатить дамп",
-      "hint": "dup БД → drop/create → импорт → ddown → dup",
+      "hint": "Снимок дампа, если есть; иначе импорт (снимок сохранится) → dup",
       "icon": "⇩",
       "confirm": "База {dbName} будет пересоздана из {dump}. Продолжить?",
       "params": [
@@ -203,9 +238,17 @@
           "action": "down"
         },
         {
+          "title": "Восстановить снимок дампа",
+          "type": "snapshotRestore",
+          "kind": "dump",
+          "dataDir": "{dbDataDir}",
+          "dumpFile": "{dumpsDir}/{dump}"
+        },
+        {
           "title": "Поднять только БД",
           "type": "shell",
-          "cmd": "docker compose -f {composeFile} up -d {dbService}"
+          "cmd": "{dc} up -d {dbService}",
+          "unless": "restored"
         },
         {
           "title": "Ждать готовности БД",
@@ -214,22 +257,36 @@
             "times": 60,
             "delayMs": 2000
           },
-          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'pg_isready -U \"$POSTGRES_USER\" -d postgres'"
+          "cmd": "{dc} exec -T {dbService} sh -c 'pg_isready -U \"$POSTGRES_USER\" -d postgres'",
+          "unless": "restored"
         },
         {
           "title": "Пересоздать базу {dbName}",
           "type": "shell",
-          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -U \"$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c \"DROP DATABASE IF EXISTS \\\"{dbName}\\\" WITH (FORCE)\" -c \"CREATE DATABASE \\\"{dbName}\\\"\"'"
+          "unless": "restored",
+          "cmd": "{dc} exec -T {dbService} sh -c 'psql -U \"$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c \"DROP DATABASE IF EXISTS \\\"{dbName}\\\" WITH (FORCE)\" -c \"CREATE DATABASE \\\"{dbName}\\\"\"'"
         },
         {
           "title": "Импорт {dump}",
           "type": "pipeFile",
           "file": "{dumpsDir}/{dump}",
-          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -q -U \"$POSTGRES_USER\" -d \"{dbName}\"'"
+          "unless": "restored",
+          "cmd": "{dc} exec -T {dbService} sh -c 'psql -q -U \"$POSTGRES_USER\" -d \"{dbName}\"'"
+        },
+        {
+          "title": "Сохранить снимок дампа",
+          "type": "snapshotSave",
+          "kind": "dump",
+          "dataDir": "{dbDataDir}",
+          "dumpFile": "{dumpsDir}/{dump}",
+          "keep": "{snapshotsKeepDump}",
+          "stopCmd": "{dc} stop -t 60 {dbService}",
+          "unless": "restored"
         },
         {
           "type": "action",
-          "action": "down"
+          "action": "down",
+          "unless": "restored"
         },
         {
           "type": "action",
@@ -241,11 +298,12 @@
     "npmCi": {
       "title": "npm ci",
       "icon": "⬇",
+      "hint": "Пропускается, если package-lock.json и версия node не менялись с прошлой установки",
       "steps": [
         {
-          "title": "npm ci",
+          "title": "npm ci (если lock изменился)",
           "type": "shell",
-          "cmd": "npm ci"
+          "cmd": "H=$(cat package-lock.json <(node -v) | sha256sum | cut -c1-64); if [ -d node_modules ] && [ \"$(cat node_modules/.dev-panel-lock 2>/dev/null)\" = \"$H\" ]; then echo 'package-lock.json не менялся — npm ci пропущен'; else npm ci && mkdir -p node_modules && echo \"$H\" > node_modules/.dev-panel-lock; fi"
         }
       ]
     },
@@ -403,6 +461,93 @@
         {
           "type": "action",
           "action": "auth"
+        }
+      ]
+    },
+    "snapSave": {
+      "title": "Сохранить БД",
+      "icon": "⎙",
+      "hint": "Сохранить текущее состояние базы в снимок (БД на время остановится)",
+      "params": [
+        {
+          "name": "name",
+          "title": "Название снимка",
+          "type": "text",
+          "optional": true
+        }
+      ],
+      "steps": [
+        {
+          "title": "Сохранить снимок",
+          "type": "snapshotSave",
+          "kind": "manual",
+          "name": "{name}",
+          "dataDir": "{dbDataDir}",
+          "stopCmd": "{dc} stop -t 60 {dbService}",
+          "startCmd": "{dc} ps -a --status exited -q {dbService} | grep -q . && {dc} start {dbService} || true"
+        }
+      ]
+    },
+    "snapRestore": {
+      "title": "Восстановить БД",
+      "icon": "↺",
+      "danger": true,
+      "hint": "Заменить базу снимком → dup (докатит миграции ветки)",
+      "confirm": "Текущая база будет заменена снимком {snapshot}. Продолжить?",
+      "params": [
+        {
+          "name": "snapshot",
+          "title": "Снимок",
+          "type": "snapshot"
+        }
+      ],
+      "steps": [
+        {
+          "type": "action",
+          "action": "down"
+        },
+        {
+          "title": "Восстановить снимок",
+          "type": "snapshotRestore",
+          "kind": "manual",
+          "id": "{snapshot}",
+          "dataDir": "{dbDataDir}"
+        },
+        {
+          "type": "action",
+          "action": "up"
+        }
+      ]
+    },
+    "snapDelete": {
+      "title": "Удалить снимок",
+      "icon": "✕",
+      "danger": true,
+      "confirm": "Удалить снимок {snapshot}?",
+      "params": [
+        {
+          "name": "snapshot",
+          "title": "Снимок",
+          "type": "snapshot"
+        }
+      ],
+      "steps": [
+        {
+          "title": "Удалить снимок",
+          "type": "snapshotDelete",
+          "id": "{snapshot}"
+        }
+      ]
+    },
+    "npmCiForce": {
+      "title": "npm ci (заново)",
+      "icon": "⬇",
+      "hint": "Всегда переустановить node_modules",
+      "steps": [
+        {
+          "title": "npm ci",
+          "type": "shell",
+          "cmd": "npm ci && H=$(cat package-lock.json <(node -v) | sha256sum | cut -c1-64) && mkdir -p node_modules && echo \"$H\" > node_modules/.dev-panel-lock"
         }
       ]
     }

@@ -12,6 +12,7 @@ const ws = require('./lib/ws');
 const secrets = require('./lib/secrets');
 const auth = require('./lib/auth');
 const authKeeper = require('./lib/authKeeper');
+const snapshots = require('./lib/snapshots');
 
 let config = load();
 
@@ -53,6 +54,10 @@ async function paramOptions(projectId, actionId, paramName) {
       value: f.name, label: f.name, meta: `${(f.size / 1024 ** 2).toFixed(0)} MB · ${new Date(f.mtime).toLocaleDateString('ru-RU')}`,
     }));
     case 'stash': return status.stashes(project.path);
+    case 'snapshot': return snapshots.list(p.kind).map(sn => ({
+      value: sn.id, label: sn.label || sn.id,
+      meta: `${sn.kind} · ${snapshots.human(sn.size)} · ${new Date(sn.createdAt).toLocaleDateString('ru-RU')}`,
+    }));
     case 'text': return [];
     case 'select': return p.options.map(o => (typeof o === 'string' ? { value: o, label: o } : o));
     default: return [];
@@ -68,7 +73,7 @@ const routes = {
   'GET /api/job': (q) => {
     const j = runner.get(q.id);
     if (!j) throw httpError(404, 'Задача не найдена');
-    const { cancelHandlers, ...rest } = j;
+    const { cancelHandlers, flags, ...rest } = j;
     return rest;
   },
   'POST /api/run': (q, body) => runner.start(config, {
