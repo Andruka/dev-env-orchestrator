@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dev Panel</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%235b8cff'/><path d='M4 5l3 3-3 3M8 11h4' stroke='white' stroke-width='1.6' fill='none'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">Dev Panel</div>
+    <div id="chips" class="chips"></div>
+    <button id="reload" class="ghost" title="Перечитать config.json">↻ Конфиг</button>
+  </header>
+
+  <main>
+    <section id="groups" class="groups"></section>
+
+    <aside class="activity">
+      <div class="tabs" id="tabs"></div>
+      <div id="jobView" class="job-view"></div>
+      <pre id="log" class="log"></pre>
+    </aside>
+  </main>
+
+  <dialog id="dialog">
+    <form method="dialog" id="dialogForm">
+      <h3 id="dialogTitle"></h3>
+      <div id="dialogBody"></div>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost" formnovalidate>Отмена</button>
+        <button value="ok" id="dialogOk" class="primary">Запустить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

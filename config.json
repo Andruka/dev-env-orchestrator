@@ -1,0 +1,157 @@
+{
+  "port": 7777,
+  "vars": {
+    "calplanRoot": "/home/andrey/gitRepositories/adept/aus/calplan",
+    "dumpsDir": "/home/andrey/gitRepositories/adept/aus/calplan/dbDumps",
+    "dbDataDir": "/home/andrey/gitRepositories/adept/aus/calplan/calplanDb",
+    "composeFile": "docker-compose-without-qt.yml",
+    "dbService": "calplanDb",
+    "dbName": "calplanDb",
+    "frontendUrl": "http://localhost:3000/objects/3140/plans",
+    "browserProfile": "/tmp/brave-dev-cors"
+  },
+
+  "groups": [
+    {
+      "id": "backend",
+      "title": "Бэкенд",
+      "kind": "compose",
+      "discover": { "root": "{calplanRoot}", "requireFile": "{composeFile}" },
+      "paths": [],
+      "exclude": ["server_old"],
+      "actions": ["checkout", "deploy", "up", "down", "dbRm", "restoreDump"]
+    },
+    {
+      "id": "frontend",
+      "title": "Фронтенд",
+      "kind": "node",
+      "paths": ["{calplanRoot}/CLIENT"],
+      "actions": ["checkout", "frontDeploy", "npmCi", "npmStart", "npmStop", "browser"]
+    }
+  ],
+
+  "actions": {
+    "checkout": {
+      "title": "Сменить ветку",
+      "icon": "⎇",
+      "params": [{ "name": "branch", "title": "Ветка", "type": "gitBranch" }],
+      "steps": [
+        { "title": "git fetch", "type": "shell", "cmd": "git fetch --all --prune" },
+        { "title": "git checkout {branch}", "type": "shell", "cmd": "git checkout '{branch}'" },
+        { "title": "git pull", "type": "shell", "cmd": "git pull --ff-only || true" }
+      ]
+    },
+
+    "down": {
+      "title": "ddown",
+      "hint": "Остановить контейнеры (все контейнеры docker)",
+      "icon": "■",
+      "steps": [
+        { "title": "Остановить процесс dup", "type": "stopService", "service": "compose" },
+        { "title": "docker compose down", "type": "shell", "cmd": "docker compose -f {composeFile} down" },
+        { "title": "Остановить и удалить все контейнеры", "type": "shell",
+          "cmd": "docker ps -aq | xargs -r docker stop; docker ps -aq | xargs -r docker rm" }
+      ]
+    },
+
+    "dbRm": {
+      "title": "dbRm",
+      "hint": "Удалить данные БД (pgdata)",
+      "icon": "🗑",
+      "confirm": "Удалить {dbDataDir}/pgdata?",
+      "steps": [
+        { "title": "Удалить pgdata", "type": "shell",
+          "cmd": "docker run --rm -v '{dbDataDir}':/d alpine rm -rf /d/pgdata" }
+      ]
+    },
+
+    "up": {
+      "title": "dup",
+      "hint": "Поднять контейнеры и дождаться миграций",
+      "icon": "▶",
+      "steps": [
+        { "title": "docker compose up", "type": "service", "service": "compose",
+          "cmd": "xhost local:root >/dev/null 2>&1 || true; exec docker compose -f {composeFile} up",
+          "readyPattern": "calplanDbScript[^ ]* +exited with code 0",
+          "failPattern": "(calplanDbScript|liquibase)[^ ]* +exited with code [1-9]" }
+      ]
+    },
+
+    "deploy": {
+      "title": "Развернуть с нуля",
+      "hint": "ddown → dbRm → dup",
+      "icon": "⟳",
+      "primary": true,
+      "confirm": "Развернуть {project.name} с нуля? База будет удалена.",
+      "steps": [
+        { "type": "action", "action": "down" },
+        { "type": "action", "action": "dbRm" },
+        { "type": "action", "action": "up" }
+      ]
+    },
+
+    "restoreDump": {
+      "title": "Накатить дамп",
+      "hint": "dup БД → drop/create → импорт → ddown → dup",
+      "icon": "⇩",
+      "confirm": "База {dbName} будет пересоздана из {dump}. Продолжить?",
+      "params": [{ "name": "dump", "title": "Дамп", "type": "file", "dir": "{dumpsDir}", "ext": ".sql" }],
+      "steps": [
+        { "type": "action", "action": "down" },
+        { "title": "Поднять только БД", "type": "shell", "cmd": "docker compose -f {composeFile} up -d {dbService}" },
+        { "title": "Ждать готовности БД", "type": "shell", "retry": { "times": 60, "delayMs": 2000 },
+          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'pg_isready -U \"$POSTGRES_USER\" -d postgres'" },
+        { "title": "Пересоздать базу {dbName}", "type": "shell",
+          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -U \"$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c \"DROP DATABASE IF EXISTS \\\"{dbName}\\\" WITH (FORCE)\" -c \"CREATE DATABASE \\\"{dbName}\\\"\"'" },
+        { "title": "Импорт {dump}", "type": "pipeFile", "file": "{dumpsDir}/{dump}",
+          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -q -U \"$POSTGRES_USER\" -d \"{dbName}\"'" },
+        { "type": "action", "action": "down" },
+        { "type": "action", "action": "up" }
+      ]
+    },
+
+    "npmCi": {
+      "title": "npm ci",
+      "icon": "⬇",
+      "steps": [{ "title": "npm ci", "type": "shell", "cmd": "npm ci" }]
+    },
+
+    "npmStart": {
+      "title": "npm start",
+      "icon": "▶",
+      "steps": [
+        { "title": "npm start", "type": "service", "service": "frontend", "cmd": "exec npm start",
+          "env": { "BROWSER": "none", "FORCE_COLOR": "0" },
+          "readyPattern": "Local:\\s+http" }
+      ]
+    },
+
+    "npmStop": {
+      "title": "Стоп",
+      "icon": "■",
+      "steps": [{ "type": "stopService", "service": "frontend" }]
+    },
+
+    "browser": {
+      "title": "bbStart",
+      "hint": "Brave без CORS на странице планов",
+      "icon": "🌐",
+      "steps": [
+        { "type": "detached", "cmd": "brave-browser --user-data-dir='{browserProfile}' --disable-web-security '{frontendUrl}'" }
+      ]
+    },
+
+    "frontDeploy": {
+      "title": "Собрать и запустить",
+      "hint": "npm ci → npm start → bbStart",
+      "icon": "⟳",
+      "primary": true,
+      "steps": [
+        { "type": "action", "action": "npmStop" },
+        { "type": "action", "action": "npmCi" },
+        { "type": "action", "action": "npmStart" },
+        { "type": "action", "action": "browser" }
+      ]
+    }
+  }
+}
