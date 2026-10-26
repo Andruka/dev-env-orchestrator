@@ -8,149 +8,402 @@
     "dbService": "calplanDb",
     "dbName": "calplanDb",
     "frontendUrl": "http://localhost:3000/objects/3140/plans",
-    "browserProfile": "/tmp/brave-dev-cors"
+    "browserProfile": "/tmp/brave-dev-cors",
+    "debugPort": 9222
   },
-
   "groups": [
     {
       "id": "backend",
       "title": "Бэкенд",
       "kind": "compose",
-      "discover": { "root": "{calplanRoot}", "requireFile": "{composeFile}" },
+      "discover": {
+        "root": "{calplanRoot}",
+        "requireFile": "{composeFile}"
+      },
       "paths": [],
-      "exclude": ["server_old"],
-      "actions": ["checkout", "deploy", "up", "down", "dbRm", "restoreDump"]
+      "exclude": [
+        "server_old"
+      ],
+      "sections": [
+        {
+          "title": "Git",
+          "actions": [
+            "checkout",
+            "pull",
+            "stash",
+            "stashPop"
+          ]
+        },
+        {
+          "title": "Окружение",
+          "actions": [
+            "deploy",
+            "restoreDump",
+            "up",
+            "down",
+            "dbRm"
+          ]
+        }
+      ],
+      "primary": "deploy"
     },
     {
       "id": "frontend",
       "title": "Фронтенд",
       "kind": "node",
-      "paths": ["{calplanRoot}/CLIENT"],
-      "actions": ["checkout", "frontDeploy", "npmCi", "npmStart", "npmStop", "browser"]
+      "paths": [
+        "{calplanRoot}/CLIENT"
+      ],
+      "sections": [
+        {
+          "title": "Git",
+          "actions": [
+            "checkout",
+            "pull",
+            "stash",
+            "stashPop"
+          ]
+        },
+        {
+          "title": "Запуск",
+          "actions": [
+            "frontDeploy",
+            "quickStart",
+            "npmCi",
+            "npmStart",
+            "npmStop",
+            "browser",
+            "auth"
+          ]
+        }
+      ],
+      "primary": "frontDeploy"
     }
   ],
-
   "actions": {
     "checkout": {
       "title": "Сменить ветку",
       "icon": "⎇",
-      "params": [{ "name": "branch", "title": "Ветка", "type": "gitBranch" }],
+      "params": [
+        {
+          "name": "branch",
+          "title": "Ветка",
+          "type": "gitBranch"
+        }
+      ],
       "steps": [
-        { "title": "git fetch", "type": "shell", "cmd": "git fetch --all --prune" },
-        { "title": "git checkout {branch}", "type": "shell", "cmd": "git checkout '{branch}'" },
-        { "title": "git pull", "type": "shell", "cmd": "git pull --ff-only || true" }
-      ]
+        {
+          "title": "git fetch",
+          "type": "shell",
+          "cmd": "git fetch --all --prune"
+        },
+        {
+          "title": "git checkout {branch}",
+          "type": "shell",
+          "cmd": "git checkout \"$P_branch\""
+        },
+        {
+          "title": "git pull --ff-only",
+          "type": "shell",
+          "cmd": "git pull --ff-only",
+          "allowFail": true
+        }
+      ],
+      "hint": "fetch → checkout → pull --ff-only. Незакоммиченные изменения не трогаются"
     },
-
     "down": {
       "title": "ddown",
       "hint": "Остановить контейнеры (все контейнеры docker)",
       "icon": "■",
       "steps": [
-        { "title": "Остановить процесс dup", "type": "stopService", "service": "compose" },
-        { "title": "docker compose down", "type": "shell", "cmd": "docker compose -f {composeFile} down" },
-        { "title": "Остановить и удалить все контейнеры", "type": "shell",
-          "cmd": "docker ps -aq | xargs -r docker stop; docker ps -aq | xargs -r docker rm" }
+        {
+          "title": "Остановить процесс dup",
+          "type": "stopService",
+          "service": "compose"
+        },
+        {
+          "title": "docker compose down",
+          "type": "shell",
+          "cmd": "docker compose -f {composeFile} down"
+        },
+        {
+          "title": "Остановить и удалить все контейнеры",
+          "type": "shell",
+          "cmd": "docker ps -aq | xargs -r docker stop; docker ps -aq | xargs -r docker rm"
+        }
       ]
     },
-
     "dbRm": {
       "title": "dbRm",
       "hint": "Удалить данные БД (pgdata)",
       "icon": "🗑",
       "confirm": "Удалить {dbDataDir}/pgdata?",
       "steps": [
-        { "title": "Удалить pgdata", "type": "shell",
-          "cmd": "docker run --rm -v '{dbDataDir}':/d alpine rm -rf /d/pgdata" }
-      ]
+        {
+          "title": "Удалить pgdata",
+          "type": "shell",
+          "cmd": "docker run --rm -v '{dbDataDir}':/d alpine rm -rf /d/pgdata"
+        }
+      ],
+      "danger": true
     },
-
     "up": {
       "title": "dup",
       "hint": "Поднять контейнеры и дождаться миграций",
       "icon": "▶",
       "steps": [
-        { "title": "docker compose up", "type": "service", "service": "compose",
+        {
+          "title": "docker compose up",
+          "type": "service",
+          "service": "compose",
           "cmd": "xhost local:root >/dev/null 2>&1 || true; exec docker compose -f {composeFile} up",
           "readyPattern": "calplanDbScript[^ ]* +exited with code 0",
-          "failPattern": "(calplanDbScript|liquibase)[^ ]* +exited with code [1-9]" }
+          "failPattern": "(calplanDbScript|liquibase)[^ ]* +exited with code [1-9]"
+        }
       ]
     },
-
     "deploy": {
       "title": "Развернуть с нуля",
       "hint": "ddown → dbRm → dup",
       "icon": "⟳",
-      "primary": true,
       "confirm": "Развернуть {project.name} с нуля? База будет удалена.",
       "steps": [
-        { "type": "action", "action": "down" },
-        { "type": "action", "action": "dbRm" },
-        { "type": "action", "action": "up" }
-      ]
+        {
+          "type": "action",
+          "action": "down"
+        },
+        {
+          "type": "action",
+          "action": "dbRm"
+        },
+        {
+          "type": "action",
+          "action": "up"
+        }
+      ],
+      "danger": true
     },
-
     "restoreDump": {
       "title": "Накатить дамп",
       "hint": "dup БД → drop/create → импорт → ddown → dup",
       "icon": "⇩",
       "confirm": "База {dbName} будет пересоздана из {dump}. Продолжить?",
-      "params": [{ "name": "dump", "title": "Дамп", "type": "file", "dir": "{dumpsDir}", "ext": ".sql" }],
+      "params": [
+        {
+          "name": "dump",
+          "title": "Дамп",
+          "type": "file",
+          "dir": "{dumpsDir}",
+          "ext": ".sql"
+        }
+      ],
       "steps": [
-        { "type": "action", "action": "down" },
-        { "title": "Поднять только БД", "type": "shell", "cmd": "docker compose -f {composeFile} up -d {dbService}" },
-        { "title": "Ждать готовности БД", "type": "shell", "retry": { "times": 60, "delayMs": 2000 },
-          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'pg_isready -U \"$POSTGRES_USER\" -d postgres'" },
-        { "title": "Пересоздать базу {dbName}", "type": "shell",
-          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -U \"$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c \"DROP DATABASE IF EXISTS \\\"{dbName}\\\" WITH (FORCE)\" -c \"CREATE DATABASE \\\"{dbName}\\\"\"'" },
-        { "title": "Импорт {dump}", "type": "pipeFile", "file": "{dumpsDir}/{dump}",
-          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -q -U \"$POSTGRES_USER\" -d \"{dbName}\"'" },
-        { "type": "action", "action": "down" },
-        { "type": "action", "action": "up" }
-      ]
+        {
+          "type": "action",
+          "action": "down"
+        },
+        {
+          "title": "Поднять только БД",
+          "type": "shell",
+          "cmd": "docker compose -f {composeFile} up -d {dbService}"
+        },
+        {
+          "title": "Ждать готовности БД",
+          "type": "shell",
+          "retry": {
+            "times": 60,
+            "delayMs": 2000
+          },
+          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'pg_isready -U \"$POSTGRES_USER\" -d postgres'"
+        },
+        {
+          "title": "Пересоздать базу {dbName}",
+          "type": "shell",
+          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -U \"$POSTGRES_USER\" -d postgres -v ON_ERROR_STOP=1 -c \"DROP DATABASE IF EXISTS \\\"{dbName}\\\" WITH (FORCE)\" -c \"CREATE DATABASE \\\"{dbName}\\\"\"'"
+        },
+        {
+          "title": "Импорт {dump}",
+          "type": "pipeFile",
+          "file": "{dumpsDir}/{dump}",
+          "cmd": "docker compose -f {composeFile} exec -T {dbService} sh -c 'psql -q -U \"$POSTGRES_USER\" -d \"{dbName}\"'"
+        },
+        {
+          "type": "action",
+          "action": "down"
+        },
+        {
+          "type": "action",
+          "action": "up"
+        }
+      ],
+      "danger": true
     },
-
     "npmCi": {
       "title": "npm ci",
       "icon": "⬇",
-      "steps": [{ "title": "npm ci", "type": "shell", "cmd": "npm ci" }]
+      "steps": [
+        {
+          "title": "npm ci",
+          "type": "shell",
+          "cmd": "npm ci"
+        }
+      ]
     },
-
     "npmStart": {
       "title": "npm start",
       "icon": "▶",
       "steps": [
-        { "title": "npm start", "type": "service", "service": "frontend", "cmd": "exec npm start",
-          "env": { "BROWSER": "none", "FORCE_COLOR": "0" },
-          "readyPattern": "Local:\\s+http" }
+        {
+          "title": "npm start",
+          "type": "service",
+          "service": "frontend",
+          "cmd": "exec npm start",
+          "env": {
+            "BROWSER": "none",
+            "FORCE_COLOR": "0"
+          },
+          "readyPattern": "Local:\\s+http"
+        }
       ]
     },
-
     "npmStop": {
       "title": "Стоп",
       "icon": "■",
-      "steps": [{ "type": "stopService", "service": "frontend" }]
+      "steps": [
+        {
+          "type": "stopService",
+          "service": "frontend"
+        }
+      ]
     },
-
     "browser": {
       "title": "bbStart",
       "hint": "Brave без CORS на странице планов",
       "icon": "🌐",
       "steps": [
-        { "type": "detached", "cmd": "brave-browser --user-data-dir='{browserProfile}' --disable-web-security '{frontendUrl}'" }
+        {
+          "type": "detached",
+          "cmd": "brave-browser --user-data-dir='{browserProfile}' --disable-web-security --remote-debugging-port={debugPort} '{frontendUrl}'"
+        }
       ]
     },
-
     "frontDeploy": {
       "title": "Собрать и запустить",
-      "hint": "npm ci → npm start → bbStart",
+      "hint": "npm ci → npm start → bbStart → вход",
       "icon": "⟳",
-      "primary": true,
       "steps": [
-        { "type": "action", "action": "npmStop" },
-        { "type": "action", "action": "npmCi" },
-        { "type": "action", "action": "npmStart" },
-        { "type": "action", "action": "browser" }
+        {
+          "type": "action",
+          "action": "npmStop"
+        },
+        {
+          "type": "action",
+          "action": "npmCi"
+        },
+        {
+          "type": "action",
+          "action": "npmStart"
+        },
+        {
+          "type": "action",
+          "action": "browser"
+        },
+        {
+          "type": "action",
+          "action": "auth"
+        }
+      ]
+    },
+    "pull": {
+      "title": "Подтянуть",
+      "icon": "↓",
+      "hint": "git fetch + git pull --ff-only (без merge-коммитов)",
+      "steps": [
+        {
+          "title": "git fetch",
+          "type": "shell",
+          "cmd": "git fetch --all --prune"
+        },
+        {
+          "title": "git pull --ff-only",
+          "type": "shell",
+          "cmd": "git pull --ff-only"
+        }
+      ]
+    },
+    "stash": {
+      "title": "В stash",
+      "icon": "⇣",
+      "hint": "Убрать все изменения (включая новые файлы) в stash",
+      "params": [
+        {
+          "name": "message",
+          "title": "Подпись stash (необязательно)",
+          "type": "text",
+          "optional": true
+        }
+      ],
+      "steps": [
+        {
+          "title": "git stash push",
+          "type": "shell",
+          "cmd": "git stash push -u ${P_message:+-m \"$P_message\"}"
+        }
+      ]
+    },
+    "stashPop": {
+      "title": "Из stash",
+      "icon": "⇡",
+      "hint": "Вернуть изменения из stash",
+      "params": [
+        {
+          "name": "stash",
+          "title": "Stash",
+          "type": "stash"
+        }
+      ],
+      "steps": [
+        {
+          "title": "git stash pop {stash}",
+          "type": "shell",
+          "cmd": "git stash pop \"$P_stash\""
+        }
+      ]
+    },
+    "auth": {
+      "title": "Войти",
+      "icon": "🔑",
+      "hint": "Получить токен по API и записать его в браузер (логин в «Настройках»)",
+      "steps": [
+        {
+          "title": "Авторизация в браузере",
+          "type": "browserAuth",
+          "url": "{frontendUrl}",
+          "debugPort": "{debugPort}"
+        }
+      ]
+    },
+    "quickStart": {
+      "title": "Запустить и войти",
+      "icon": "▶",
+      "hint": "npm start → bbStart → вход (без npm ci)",
+      "steps": [
+        {
+          "type": "action",
+          "action": "npmStop"
+        },
+        {
+          "type": "action",
+          "action": "npmStart"
+        },
+        {
+          "type": "action",
+          "action": "browser"
+        },
+        {
+          "type": "action",
+          "action": "auth"
+        }
       ]
     }
   }

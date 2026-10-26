@@ -8,6 +8,8 @@ const runner = require('./lib/runner');
 const services = require('./lib/services');
 const status = require('./lib/status');
 const bus = require('./lib/bus');
+const secrets = require('./lib/secrets');
+const auth = require('./lib/auth');
 
 let config = load();
 
@@ -29,9 +31,11 @@ function httpError(code, message) {
 function publicConfig() {
   return {
     vars: config.vars,
-    groups: config.groups.map(({ discover, paths, exclude, ...g }) => g),
+    groups: config.groups.map(({ discover, paths, exclude, ...g }) => ({
+      ...g, sections: g.sections || [{ title: 'Действия', actions: g.actions || [] }],
+    })),
     actions: Object.fromEntries(Object.entries(config.actions).map(([id, a]) => [id, {
-      title: a.title, hint: a.hint, icon: a.icon, primary: a.primary, confirm: a.confirm, params: a.params || [],
+      title: a.title, hint: a.hint, icon: a.icon, danger: a.danger, confirm: a.confirm, params: a.params || [],
     }])),
   };
 }
@@ -46,6 +50,8 @@ async function paramOptions(projectId, actionId, paramName) {
     case 'file': return status.files(p.dir, p.ext).map(f => ({
       value: f.name, label: f.name, meta: `${(f.size / 1024 ** 2).toFixed(0)} MB · ${new Date(f.mtime).toLocaleDateString('ru-RU')}`,
     }));
+    case 'stash': return status.stashes(project.path);
+    case 'text': return [];
     case 'select': return p.options.map(o => (typeof o === 'string' ? { value: o, label: o } : o));
     default: return [];
   }
@@ -67,6 +73,13 @@ const routes = {
     actionId: body.action, project: findProject(body.project), params: body.params || {},
   }),
   'POST /api/cancel': (q) => ({ ok: runner.cancel(q.id) }),
+  'GET /api/settings': () => secrets.publicView(),
+  'POST /api/settings': (q, body) => secrets.updateAuth(body.auth || {}),
+  'POST /api/settings/test': async () => {
+    const lines = [];
+    const { user } = await auth.login(l => lines.push(l));
+    return { ok: true, lines, user };
+  },
   'GET /api/services': () => services.list(),
   'GET /api/service/logs': (q) => services.logs(q.name),
   'POST /api/service/stop': async (q) => ({ ok: await services.stop(q.name) }),

@@ -4,38 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dev Panel</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%235b8cff'/><path d='M4 5l3 3-3 3M8 11h4' stroke='white' stroke-width='1.6' fill='none'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%236d8dff'/><path d='M4 5l3 3-3 3M8.5 11H12' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header>
-    <div class="brand">Dev Panel</div>
-    <div id="chips" class="chips"></div>
-    <button id="reload" class="ghost" title="Перечитать config.json">↻ Конфиг</button>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span>Dev Panel</div>
+    <div id="env" class="env"></div>
+    <div class="top-actions">
+      <button id="paletteBtn" class="ghost kbd-btn" title="Палитра команд">Команды <kbd>Ctrl K</kbd></button>
+      <button id="settingsBtn" class="ghost icon-btn" title="Настройки входа">⚙</button>
+      <button id="reloadBtn" class="ghost icon-btn" title="Перечитать config.json">↻</button>
+    </div>
   </header>
 
-  <main>
-    <section id="groups" class="groups"></section>
-
-    <aside class="activity">
-      <div class="tabs" id="tabs"></div>
+  <main class="layout">
+    <section id="repos" class="repos" aria-label="Проекты"></section>
+    <section class="console" aria-label="Консоль">
+      <nav id="tabs" class="tabs"></nav>
       <div id="jobView" class="job-view"></div>
       <pre id="log" class="log"></pre>
-    </aside>
+    </section>
   </main>
 
-  <dialog id="dialog">
+  <dialog id="dialog" class="modal">
     <form method="dialog" id="dialogForm">
       <h3 id="dialogTitle"></h3>
       <div id="dialogBody"></div>
-      <div class="dialog-actions">
+      <div class="modal-actions">
         <button value="cancel" class="ghost" formnovalidate>Отмена</button>
         <button value="ok" id="dialogOk" class="primary">Запустить</button>
       </div>
     </form>
   </dialog>
 
-  <div id="toast" class="toast"></div>
+  <dialog id="palette" class="modal palette">
+    <input id="paletteInput" placeholder="Действие или проект…  ↑↓ выбрать · Enter запустить · Esc закрыть" autocomplete="off">
+    <div id="paletteList" class="palette-list"></div>
+  </dialog>
+
+  <div id="toasts" class="toasts"></div>
   <script src="app.js"></script>
 </body>
 </html>
