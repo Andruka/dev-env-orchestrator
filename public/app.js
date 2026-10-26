@@ -196,7 +196,35 @@ function renderDetail(p, st) {
       <div class="section-label">${esc(s.title)}</div>
       <div class="section-actions">${s.actions.filter(a => a !== p.groupObj.primary).map(a => actionButton(a, p)).join('')}</div>
     </div>`).join('');
-  return `<div class="repo-detail"><div class="meta-line">${meta.join('')}</div>${changes}${ctrs}${sections}</div>`;
+  const snaps = p.groupObj.kind === 'compose' ? renderSnapshots(p) : '';
+  return `<div class="repo-detail"><div class="meta-line">${meta.join('')}</div>${changes}${ctrs}${sections}${snaps}</div>`;
+}
+
+const SNAP_KIND = {
+  fresh: ['авто', 'Создан автоматически после миграций. Используется «Развернуть с нуля» для веток с теми же миграциями'],
+  dump: ['дамп', 'Создан автоматически после импорта дампа. Используется «Накатить дамп» для этого же файла'],
+  manual: ['ручной', 'Сохранён кнопкой «Сохранить текущую БД»'],
+};
+
+function renderSnapshots(p) {
+  const list = state.status?.snapshots || [];
+  const busy = runningJob(p.group);
+  const rows = list.map(sn => {
+    const [kind, kindHint] = SNAP_KIND[sn.kind] || [sn.kind, ''];
+    const size = sn.size >= 1024 ** 3 ? `${(sn.size / 1024 ** 3).toFixed(1)} ГБ` : `${Math.max(1, Math.round(sn.size / 1024 ** 2))} МБ`;
+    const date = new Date(sn.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return `<div class="snap" title="${esc(sn.id)}">
+      <span class="badge ${sn.kind === 'manual' ? 'alive' : ''}" title="${esc(kindHint)}">${esc(kind)}</span>
+      <span class="snap-label">${esc(sn.kind === 'fresh' ? sn.branch : sn.label)}</span>
+      <span class="snap-meta">${esc(sn.kind === 'fresh' ? `${sn.migrations} файлов миграций · ` : sn.kind === 'manual' ? `${sn.project} · ` : '')}${size} · ${date}</span>
+      <span class="snap-actions">
+        <button class="ghost" ${busy ? 'disabled' : ''} data-snap-restore="${esc(sn.id)}" data-project="${esc(p.id)}" title="Заменить текущую базу этим снимком">↺ Восстановить</button>
+        <button class="ghost danger-ghost" ${busy ? 'disabled' : ''} data-snap-delete="${esc(sn.id)}" data-project="${esc(p.id)}" title="Удалить этот снимок">✕</button>
+      </span>
+    </div>`;
+  }).join('');
+  return `<div class="section"><div class="section-label"></div>
+    <div class="snaps">${rows || '<div class="snap-empty">Снимков пока нет. Они появятся после «Развернуть с нуля», «Накатить дамп» или «Сохранить текущую БД».</div>'}</div></div>`;
 }
 
 function select(id, { scroll = false } = {}) {
@@ -208,18 +236,21 @@ function select(id, { scroll = false } = {}) {
 
 /* ---------- запуск действий ---------- */
 
-async function runAction(projectId, actionId) {
+async function runAction(projectId, actionId, preset = {}) {
   const action = state.config.actions[actionId];
   const project = findProject(projectId);
   if (!action || !project) return;
-  const params = {};
-  for (const p of action.params) {
+  const params = { ...preset };
+  for (const p of action.params.filter(p => !(p.name in params))) {
     const v = await askParam(project, actionId, action, p);
     if (v == null) return;
     params[p.name] = v;
   }
   if (action.confirm || action.danger) {
-    const msg = tpl(action.confirm || `${action.title}: ${action.hint || ''}`, { ...state.config.vars, ...params, project });
+    const shown = { ...params };
+    const snap = params.snapshot && (state.status?.snapshots || []).find(x => x.id === params.snapshot);
+    if (snap) shown.snapshot = snap.label || snap.id;
+    const msg = tpl(action.confirm || `${action.title}: ${action.hint || ''}`, { ...state.config.vars, ...shown, project });
     if (!(await confirmDialog(`${action.title} · ${project.name}`, msg, action.danger))) return;
   }
   try {
@@ -492,16 +523,49 @@ async function ensureLog() {
       state.logs.job[state.jobId] = (await api(`/api/job?id=${state.jobId}`)).log;
     }
   } catch { /* задача могла исчезнуть из истории */ }
+  renderLogTail(true);
+}
+
+// Лог может приходить тысячами строк в секунду (liquibase, скрипты БД). Строки копятся в буфере
+// и вставляются одной пачкой раз за кадр; в DOM держим только хвост, иначе браузер отстаёт на минуты.
+const MAX_DOM_LINES = 2000;
+const MAX_STORED_LINES = 5000;
+const pendingLines = [];
+let flushRaf = null;
+let domLines = 0;
+
+function renderLogTail(scrollToEnd) {
+  pendingLines.length = 0;
   const el = $('#log');
-  el.innerHTML = (currentLog() || []).map(lineHtml).join('\n');
-  el.scrollTop = el.scrollHeight;
+  const lines = (currentLog() || []).slice(-MAX_DOM_LINES);
+  el.innerHTML = lines.map(lineHtml).join('\n');
+  domLines = lines.length;
+  if (scrollToEnd) el.scrollTop = el.scrollHeight;
 }
 
 function appendLog(line) {
+  pendingLines.push(line);
+  if (!flushRaf) flushRaf = requestAnimationFrame(flushLog);
+}
+
+function flushLog() {
+  flushRaf = null;
+  if (!pendingLines.length) return;
   const el = $('#log');
   const stick = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-  el.insertAdjacentHTML('beforeend', (el.childNodes.length ? '\n' : '') + lineHtml(line));
+  if (domLines + pendingLines.length > MAX_DOM_LINES) {
+    renderLogTail(false);
+  } else {
+    el.insertAdjacentHTML('beforeend', (domLines ? '\n' : '') + pendingLines.map(lineHtml).join('\n'));
+    domLines += pendingLines.length;
+    pendingLines.length = 0;
+  }
   if (stick) el.scrollTop = el.scrollHeight;
+}
+
+function storeLine(arr, line) {
+  arr.push(line);
+  if (arr.length > MAX_STORED_LINES) arr.splice(0, arr.length - MAX_STORED_LINES);
 }
 
 function renderAll() {
@@ -531,6 +595,10 @@ function notifyDone(job) {
 
 document.addEventListener('click', e => {
   const t = e.target;
+  const sr = t.closest('[data-snap-restore]');
+  if (sr) return runAction(sr.dataset.project, 'snapRestore', { snapshot: sr.dataset.snapRestore });
+  const sd = t.closest('[data-snap-delete]');
+  if (sd) return runAction(sd.dataset.project, 'snapDelete', { snapshot: sd.dataset.snapDelete });
   const btn = t.closest('button[data-action]');
   if (btn) { e.stopPropagation(); return runAction(btn.dataset.project, btn.dataset.action); }
   const stop = t.closest('[data-stop-svc]');
@@ -610,7 +678,7 @@ function connect() {
         break;
       }
       case 'jobLog':
-        (state.logs.job[m.id] ||= []).push(m.line);
+        storeLine(state.logs.job[m.id] ||= [], m.line);
         if (state.tab === 'jobs' && state.jobId === m.id) appendLog(m.line);
         break;
       case 'jobProgress': {
@@ -637,7 +705,7 @@ function connect() {
         break;
       }
       case 'serviceLog':
-        state.logs.svc[m.name]?.push(m.line);
+        if (state.logs.svc[m.name]) storeLine(state.logs.svc[m.name], m.line);
         if (state.tab === 'svc:' + m.name) appendLog(m.line);
         break;
     }

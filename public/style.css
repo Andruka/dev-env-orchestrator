@@ -96,6 +96,16 @@ button.ghost:hover:not(:disabled) { background: var(--raised); color: var(--text
 .section-label { font-size: var(--fs-s); color: var(--faint); padding-top: 7px; }
 .section-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .section-actions button { font-size: 13px; padding: 5px 10px; }
+.snaps { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: var(--r); padding: 4px; background: var(--void); }
+.snap { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.snap:hover { background: var(--raised); }
+.snap-label { font-family: var(--mono); font-size: var(--fs-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snap-meta { color: var(--faint); font-size: var(--fs-s); white-space: nowrap; }
+.snap-actions { display: flex; gap: 2px; }
+.snap-actions button { padding: 3px 8px; font-size: var(--fs-s); }
+.snap:not(:hover) .snap-actions button { visibility: hidden; }
+button.ghost.danger-ghost:hover:not(:disabled) { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+.snap-empty { color: var(--faint); font-size: var(--fs-s); padding: 6px 8px; }
 .changes { margin: 0 0 10px; font-size: var(--fs-s); }
 .changes summary { color: var(--warn); cursor: pointer; list-style: none; }
 .changes summary::-webkit-details-marker { display: none; }
