@@ -447,6 +447,7 @@ function runPalette(item) {
 
 function upsertJob(job) {
   const i = state.jobs.findIndex(j => j.id === job.id);
+  if (i >= 0 && (state.jobs[i].rev || 0) > (job.rev || 0)) return;
   if (i >= 0) state.jobs[i] = { ...state.jobs[i], ...job };
   else state.jobs.unshift(job);
 }
