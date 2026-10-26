@@ -40,8 +40,38 @@ function tpl(str, ctx) {
   return String(str).replace(/\{([A-Za-z_][\w.]*)\}/g, (m, k) => k.split('.').reduce((o, p) => o?.[p], ctx) ?? m);
 }
 
+// Точечное обновление DOM вместо замены innerHTML: меняются только отличающиеся атрибуты и текст.
+// Иначе при каждом обновлении статуса элементы пересоздаются — проигрываются анимации появления,
+// сбрасываются наведение мыши и фокус, и интерфейс «моргает».
 function setHtml(el, html) {
-  if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  if (el._html === html) return;
+  el._html = html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  morphChildren(el, tpl.content);
+}
+
+function morphChildren(from, to) {
+  const next = [...to.childNodes];
+  const cur = [...from.childNodes];
+  next.forEach((node, i) => {
+    if (i >= cur.length) from.appendChild(node);
+    else morphNode(cur[i], node);
+  });
+  for (let i = next.length; i < cur.length; i++) cur[i].remove();
+}
+
+function morphNode(a, b) {
+  const sameKind = a.nodeType === b.nodeType && a.nodeName === b.nodeName
+    && (a.nodeType !== 1 || a.getAttribute('data-key') === b.getAttribute('data-key'));
+  if (!sameKind) { a.replaceWith(b); return; }
+  if (a.nodeType !== 1) {
+    if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+    return;
+  }
+  for (const { name } of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
+  for (const { name, value } of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  morphChildren(a, b);
 }
 
 const fmtTime = ts => (ts ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '');
@@ -163,7 +193,7 @@ function renderRepos() {
           alive && !mine ? `<span class="badge alive">${g.kind === 'compose' ? 'запущен' : 'npm start'}</span>` : '',
         ].join('');
         return `
-        <article class="repo ${sel ? 'sel' : ''} ${alive ? 'alive' : ''}" data-repo="${esc(p.id)}">
+        <article class="repo ${sel ? 'sel' : ''} ${alive ? 'alive' : ''}" data-repo="${esc(p.id)}" data-key="${esc(p.id)}">
           <div class="repo-row">
             <span class="dot ${mine ? 'busy' : alive ? 'alive' : ''}"></span>
             <span class="repo-name">${esc(p.name)}</span>
@@ -213,7 +243,7 @@ function renderSnapshots(p) {
     const [kind, kindHint] = SNAP_KIND[sn.kind] || [sn.kind, ''];
     const size = sn.size >= 1024 ** 3 ? `${(sn.size / 1024 ** 3).toFixed(1)} ГБ` : `${Math.max(1, Math.round(sn.size / 1024 ** 2))} МБ`;
     const date = new Date(sn.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    return `<div class="snap" title="${esc(sn.id)}">
+    return `<div class="snap" title="${esc(sn.id)}" data-key="${esc(sn.id)}">
       <span class="badge ${sn.kind === 'manual' ? 'alive' : ''}" title="${esc(kindHint)}">${esc(kind)}</span>
       <span class="snap-label">${esc(sn.kind === 'fresh' ? sn.branch : sn.label)}</span>
       <span class="snap-meta">${esc(sn.kind === 'fresh' ? `${sn.migrations} файлов миграций · ` : sn.kind === 'manual' ? `${sn.project} · ` : '')}${size} · ${date}</span>
