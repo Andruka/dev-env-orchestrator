@@ -8,7 +8,7 @@
     "dbService": "calplanDb",
     "dbName": "calplanDb",
     "frontendUrl": "http://localhost:3000/objects/3140/plans",
-    "browserProfile": "/tmp/brave-dev-cors",
+    "browserProfile": "/home/andrey/.config/brave-dev-cors",
     "debugPort": 9222
   },
   "groups": [

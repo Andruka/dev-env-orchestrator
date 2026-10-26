@@ -6,7 +6,11 @@
 #   dev-panel status    запущена ли
 #   dev-panel logs      лог панели
 #   dev-panel fg        запустить в текущем терминале
+#   dev-panel autostart on|off   запуск при входе в систему
 set -euo pipefail
+
+# При автозапуске из графической сессии ~/.local/bin (где node) может не быть в PATH
+export PATH="$HOME/.local/bin:$PATH"
 
 DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/dev-panel"
@@ -52,5 +56,24 @@ case "${1:-open}" in
   status)  running && echo "запущена (pid $(cat "$PIDFILE")) — $URL" || echo "не запущена" ;;
   logs)    tail -n 200 -f "$LOG" ;;
   fg)      cd "$DIR" && exec node server.js ;;
-  *)       sed -n '2,8p' "$0"; exit 1 ;;
+  autostart)
+    AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/dev-panel.desktop"
+    case "${2:-}" in
+      on)
+        mkdir -p "$(dirname "$AUTOSTART")"
+        cat >"$AUTOSTART" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Dev Panel
+Comment=Запуск Dev Panel в фоне при входе в систему
+Exec=$DIR/bin/dev-panel start
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+DESKTOP
+        echo "Автозапуск включён: $AUTOSTART" ;;
+      off) rm -f "$AUTOSTART"; echo "Автозапуск выключен" ;;
+      *) [[ -f "$AUTOSTART" ]] && echo "Автозапуск включён ($AUTOSTART)" || echo "Автозапуск выключен" ;;
+    esac ;;
+  *)       sed -n '2,9p' "$0"; exit 1 ;;
 esac

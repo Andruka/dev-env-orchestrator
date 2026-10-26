@@ -11,6 +11,7 @@ const bus = require('./lib/bus');
 const ws = require('./lib/ws');
 const secrets = require('./lib/secrets');
 const auth = require('./lib/auth');
+const authKeeper = require('./lib/authKeeper');
 
 let config = load();
 
@@ -60,7 +61,7 @@ async function paramOptions(projectId, actionId, paramName) {
 
 const routes = {
   'GET /api/config': () => publicConfig(),
-  'POST /api/reload': () => { config = load(); return publicConfig(); },
+  'POST /api/reload': () => { config = load(); authKeeper.start(config.vars); return publicConfig(); },
   'GET /api/status': () => status.collect(config),
   'GET /api/options': (q) => paramOptions(q.project, q.action, q.param),
   'GET /api/jobs': () => runner.list(),
@@ -75,12 +76,14 @@ const routes = {
   }),
   'POST /api/cancel': (q) => ({ ok: runner.cancel(q.id) }),
   'GET /api/settings': () => secrets.publicView(),
-  'POST /api/settings': (q, body) => secrets.updateAuth(body.auth || {}),
+  'POST /api/settings': (q, body) => { const r = secrets.updateAuth(body.auth || {}); authKeeper.tick(); return r; },
   'POST /api/settings/test': async () => {
     const lines = [];
     const { user } = await auth.login(l => lines.push(l));
     return { ok: true, lines, user };
   },
+  'GET /api/auth': () => authKeeper.state(),
+  'POST /api/auth/check': async () => { await authKeeper.tick(); return authKeeper.state(); },
   'GET /api/services': () => services.list(),
   'GET /api/service/logs': (q) => services.logs(q.name),
   'POST /api/service/stop': async (q) => ({ ok: await services.stop(q.name) }),
@@ -127,14 +130,12 @@ server.on('upgrade', (req, socket) => {
 
 setInterval(() => bus.ping(), 20000);
 
+services.adopt();
+
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`Dev Panel: http://localhost:${config.port}`);
+  authKeeper.start(config.vars);
 });
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, async () => {
-    console.log('Останавливаю сервисы...');
-    await services.stopAll();
-    process.exit(0);
-  });
-}
+// Сервисы (dup, npm start) не останавливаются вместе с панелью — следующий запуск их подхватит
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));

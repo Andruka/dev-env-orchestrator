@@ -16,6 +16,7 @@ const state = {
   jobId: null,
   logs: { job: {}, svc: {} },
   openChanges: new Set(),
+  auth: null,
 };
 
 /* ---------- утилиты ---------- */
@@ -87,6 +88,7 @@ function renderEnv() {
     items.push(`<div class="env-item off"><span class="dot"></span><span class="k">Фронт</span><span class="v">не запущен</span></div>`);
   }
   items.push(`<div class="env-item off"><span class="dot ${state.status.ports.db ? 'alive' : ''}"></span><span class="k">PostgreSQL</span><span class="v mono">:5432</span></div>`);
+  items.push(authChip());
   const job = state.jobs.find(j => j.status === 'running');
   if (job) {
     const st = job.steps.find(s => s.status === 'running');
@@ -97,6 +99,34 @@ function renderEnv() {
 
   const pst = job?.steps.find(s => s.status === 'running');
   document.title = job ? `◌ ${pst?.progress != null ? pst.progress + '% · ' : ''}${job.title} — Dev Panel` : 'Dev Panel';
+}
+
+const AUTH_TEXT = {
+  'no-browser': ['', 'браузер не открыт', 'Brave с портом отладки не запущен — откройте его кнопкой bbStart'],
+  'no-page': ['', 'нет вкладки :3000', 'Не найдена вкладка фронтенда в браузере'],
+  'front-down': ['warn', 'фронт не запущен', 'Вкладка открыта, но фронтенд не отвечает — запустите npm start'],
+  'no-credentials': ['warn', 'не настроен', 'Задайте логин и пароль в настройках'],
+  off: ['', 'выключено', 'Автоподдержание входа выключено в настройках'],
+  idle: ['', '…', ''],
+};
+
+function authChip() {
+  const a = state.auth;
+  if (!a) return '';
+  let dot, text, title;
+  if (a.status === 'ok') {
+    const left = a.expiresAt ? Math.round((a.expiresAt * 1000 - Date.now()) / 60000) : null;
+    dot = 'alive';
+    text = left != null ? `продлится через ${Math.max(left - 15, 0)} мин` : 'ок';
+    title = `Токен до ${a.expiresAt ? new Date(a.expiresAt * 1000).toLocaleTimeString('ru-RU') : '?'}. Панель продлевает его за 15 минут до истечения.`
+      + (a.lastAction ? `\nПоследнее действие: ${a.lastAction} в ${new Date(a.actionAt).toLocaleTimeString('ru-RU')}` : '')
+      + '\nКлик — проверить сейчас';
+  } else if (a.status === 'error') {
+    [dot, text, title] = ['err', 'ошибка', a.lastError || ''];
+  } else {
+    [dot, text, title] = AUTH_TEXT[a.status] || ['', a.status, ''];
+  }
+  return `<div class="env-item off" title="${esc(title)}" style="cursor:pointer" data-auth-check><span class="dot ${dot}"></span><span class="k">Вход</span><span class="v">${esc(text)}</span></div>`;
 }
 
 /* ---------- проекты ---------- */
@@ -289,6 +319,8 @@ async function openSettings() {
         <div class="field"><label>clientId</label><input id="sClient" value="${esc(s.clientId)}" inputmode="numeric"></div>
       </div>
       <div class="field"><label>Пароль</label><input id="sPass" type="password" placeholder="${s.hasPassword ? '•••••••• сохранён — оставьте пустым, чтобы не менять' : 'не задан'}" autocomplete="new-password"></div>
+      <label class="check"><input type="checkbox" id="sKeep" ${s.keepAlive !== false ? 'checked' : ''}>
+        <span>Поддерживать вход автоматически<br><span class="help">Панель продлевает токен в браузере за 15 минут до истечения и входит заново, если сессия слетела</span></span></label>
       <div class="field"><label>URL получения токена</label><input id="sLoginUrl" class="mono" value="${esc(s.loginUrl)}"></div>
       <div class="field"><label>URL данных пользователя</label><input id="sUsersUrl" class="mono" value="${esc(s.usersUrl)}">
         <span class="help">{userId} подставляется из ответа логина. Оставьте пустым, чтобы не запрашивать.</span></div>
@@ -321,7 +353,7 @@ async function openSettings() {
 function readSettingsForm() {
   return {
     login: $('#sLogin').value, clientId: $('#sClient').value, password: $('#sPass').value,
-    loginUrl: $('#sLoginUrl').value, usersUrl: $('#sUsersUrl').value,
+    loginUrl: $('#sLoginUrl').value, usersUrl: $('#sUsersUrl').value, keepAlive: $('#sKeep').checked,
   };
 }
 
@@ -505,6 +537,9 @@ document.addEventListener('click', e => {
   if (stop) return api(`/api/service/stop?name=${encodeURIComponent(stop.dataset.stopSvc)}`, {}).catch(err => toast(err.message, 'err'));
   const cancel = t.closest('[data-cancel]');
   if (cancel) return api(`/api/cancel?id=${cancel.dataset.cancel}`, {}).catch(err => toast(err.message, 'err'));
+  if (t.closest('[data-auth-check]')) {
+    return api('/api/auth/check', {}).then(a => { state.auth = a; renderEnv(); }).catch(err => toast(err.message, 'err'));
+  }
   const tab = t.closest('[data-tab]');
   if (tab) { state.tab = tab.dataset.tab; renderTabs(); renderJobView(); return ensureLog(); }
   const jr = t.closest('[data-job]');
@@ -591,6 +626,16 @@ function connect() {
         scheduleRender();
         break;
       }
+      case 'auth': {
+        const { type, ...a } = m;
+        const prev = state.auth;
+        state.auth = a;
+        if (prev && a.actionAt && a.actionAt !== prev.actionAt && a.lastAction.startsWith('relogin')) {
+          toast('Сессия во фронтенде слетела — панель вошла заново', 'ok');
+        }
+        renderEnv();
+        break;
+      }
       case 'serviceLog':
         state.logs.svc[m.name]?.push(m.line);
         if (state.tab === 'svc:' + m.name) appendLog(m.line);
@@ -601,6 +646,7 @@ function connect() {
     reconnectDelay = 500;
     state.jobs = await api('/api/jobs');
     state.services = await api('/api/services');
+    state.auth = await api('/api/auth').catch(() => null);
     state.logs = { job: {}, svc: {} };
     renderAll();
   };
@@ -610,8 +656,8 @@ function connect() {
   state.config = await api('/api/config');
   if (state.sel && !findProject(state.sel)) state.sel = null;
   if (!state.sel) state.sel = allProjects()[0]?.id ?? null;
-  await refreshStatus();
   renderAll();
+  await refreshStatus();
   connect();
   setInterval(() => { if (state.jobs.some(j => j.status === 'running')) { renderJobView(); renderEnv(); } }, 1000);
 })();
