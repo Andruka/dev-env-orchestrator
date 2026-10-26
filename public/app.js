@@ -553,8 +553,15 @@ async function refreshStatus() {
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshStatus(); });
 
+// WebSocket, а не EventSource: SSE держит одно из 6 HTTP-соединений браузера на хост,
+// и при нескольких открытых вкладках панели новые запросы вставали в очередь (белая страница).
+let reconnectDelay = 500;
 function connect() {
-  const es = new EventSource('/api/events');
+  const es = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/ws`);
+  es.onclose = () => {
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 5000);
+  };
   es.onmessage = ev => {
     const m = JSON.parse(ev.data);
     switch (m.type) {
@@ -591,6 +598,7 @@ function connect() {
     }
   };
   es.onopen = async () => {
+    reconnectDelay = 500;
     state.jobs = await api('/api/jobs');
     state.services = await api('/api/services');
     state.logs = { job: {}, svc: {} };

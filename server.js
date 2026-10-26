@@ -8,6 +8,7 @@ const runner = require('./lib/runner');
 const services = require('./lib/services');
 const status = require('./lib/status');
 const bus = require('./lib/bus');
+const ws = require('./lib/ws');
 const secrets = require('./lib/secrets');
 const auth = require('./lib/auth');
 
@@ -102,13 +103,6 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const q = Object.fromEntries(url.searchParams);
 
-  if (url.pathname === '/api/events') {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    res.write('retry: 2000\n\n');
-    bus.subscribe(res);
-    return;
-  }
-
   const handler = routes[`${req.method} ${url.pathname}`];
   if (handler) {
     try {
@@ -125,7 +119,13 @@ const server = http.createServer(async (req, res) => {
   send(res, 200, fs.readFileSync(file), MIME[path.extname(file)] || 'application/octet-stream');
 });
 
-setInterval(() => bus.emit('ping', {}), 15000);
+server.on('upgrade', (req, socket) => {
+  if (new URL(req.url, 'http://localhost').pathname !== '/api/ws') return socket.destroy();
+  const client = ws.accept(req, socket);
+  if (client) bus.subscribe(client);
+});
+
+setInterval(() => bus.ping(), 20000);
 
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`Dev Panel: http://localhost:${config.port}`);
