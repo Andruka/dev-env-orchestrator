@@ -1,33 +1,55 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="graphite">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dev Panel</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%236d8dff'/><path d='M4 5l3 3-3 3M8.5 11H12' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <script>
+    // Тема применяется до отрисовки, чтобы страница не мигала дефолтной темой
+    (function () {
+      try {
+        var t = JSON.parse(localStorage.getItem('devpanel.theme')) || 'auto';
+        var d = JSON.parse(localStorage.getItem('devpanel.density')) || 'comfortable';
+        if (t === 'auto') t = matchMedia('(prefers-color-scheme: light)').matches ? 'daylight' : 'graphite';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.dataset.density = d;
+      } catch (e) { /* хранилище недоступно */ }
+    })();
+  </script>
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="themes.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark"></span>Dev Panel</div>
-    <div id="env" class="env"></div>
+    <div class="brand"><img class="brand-mark" src="logo.svg" alt="">Dev Panel</div>
+    <div id="env" class="env" role="status" aria-label="Что запущено"></div>
     <div class="top-actions">
-      <button id="paletteBtn" class="ghost kbd-btn" title="Палитра команд">Команды <kbd>Ctrl K</kbd></button>
-      <button id="settingsBtn" class="ghost icon-btn" title="Настройки входа">⚙</button>
-      <button id="reloadBtn" class="ghost icon-btn" title="Перечитать config.json">↻</button>
+      <button id="paletteBtn" class="ghost kbd-btn" title="Палитра команд (Ctrl+K)"><span data-ic="command"></span>Команды <kbd>Ctrl K</kbd></button>
+      <button id="helpBtn" class="ghost icon-btn" title="Справка и горячие клавиши (?)" aria-label="Справка"><span data-ic="circle-help"></span></button>
+      <button id="themeBtn" class="ghost icon-btn" title="Оформление" aria-label="Оформление"><span data-ic="palette"></span></button>
+      <button id="settingsBtn" class="ghost icon-btn" title="Настройки" aria-label="Настройки"><span data-ic="settings"></span></button>
     </div>
   </header>
 
-  <main class="layout">
+  <main class="layout" id="layout">
     <section id="repos" class="repos" aria-label="Проекты"></section>
+    <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" aria-label="Ширина колонок" tabindex="0"></div>
     <section class="console" aria-label="Консоль">
-      <nav id="tabs" class="tabs"></nav>
+      <nav id="tabs" class="tabs" role="tablist" aria-label="Задачи и сервисы"></nav>
       <div id="jobView" class="job-view"></div>
-      <pre id="log" class="log"></pre>
+      <div class="log-wrap">
+        <div class="log-tools">
+          <button id="logCopy" class="sm" title="Копировать лог"><span data-ic="copy"></span>Копировать</button>
+          <button id="logEnd" class="sm" title="К концу лога"><span data-ic="arrow-down"></span></button>
+        </div>
+        <pre id="log" class="log" tabindex="0" aria-label="Лог"></pre>
+      </div>
     </section>
   </main>
 
-  <dialog id="dialog" class="modal">
+  <dialog id="dialog" class="modal" aria-labelledby="dialogTitle">
     <form method="dialog" id="dialogForm">
       <h3 id="dialogTitle"></h3>
       <div id="dialogBody"></div>
@@ -38,12 +60,21 @@
     </form>
   </dialog>
 
-  <dialog id="palette" class="modal palette">
-    <input id="paletteInput" placeholder="Действие или проект…  ↑↓ выбрать · Enter запустить · Esc закрыть" autocomplete="off">
-    <div id="paletteList" class="palette-list"></div>
+  <dialog id="palette" class="modal palette" aria-label="Палитра команд">
+    <input id="paletteInput" placeholder="Действие или проект…  ↑↓ выбрать · Enter запустить · Esc закрыть" autocomplete="off" aria-label="Поиск команды">
+    <div id="paletteList" class="palette-list" role="listbox"></div>
   </dialog>
 
-  <div id="toasts" class="toasts"></div>
+  <dialog id="settings" class="modal settings" aria-label="Настройки"></dialog>
+  <dialog id="editor" class="modal editor" aria-label="Редактор кнопки"></dialog>
+  <dialog id="picker" class="modal picker" aria-label="Выбор папки"></dialog>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <script src="icons.js"></script>
+  <script src="util.js"></script>
+  <script src="themes.js"></script>
+  <script src="dialogs.js"></script>
+  <script src="settings.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

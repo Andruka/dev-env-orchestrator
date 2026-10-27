@@ -1,16 +1,20 @@
 {
-  "port": 7777,
   "vars": {
-    "calplanRoot": "/home/andrey/gitRepositories/adept/aus/calplan",
-    "dumpsDir": "/home/andrey/gitRepositories/adept/aus/calplan/dbDumps",
-    "dbDataDir": "/home/andrey/gitRepositories/adept/aus/calplan/calplanDb",
+    "calplanRoot": "",
+    "dumpsDir": "{calplanRoot}/dbDumps",
+    "dbDataDir": "{calplanRoot}/calplanDb",
     "composeFile": "docker-compose-without-qt.yml",
     "dbService": "calplanDb",
     "dbName": "calplanDb",
     "frontendUrl": "http://localhost:3000/objects/3140/plans",
-    "browserProfile": "/home/andrey/.config/brave-dev-cors",
+    "frontendPort": 3000,
+    "dbPort": 5432,
+    "browserCmd": "",
+    "browserProfile": "{home}/.config/brave-dev-cors",
     "debugPort": 9222,
     "migrationsDir": "src/AusPlan/Database/Migration",
+    "snapshotsEnabled": true,
+    "snapshotsDir": "{dataHome}/dev-panel/snapshots",
     "snapshotsKeepFresh": 8,
     "snapshotsKeepDump": 2,
     "dc": "docker compose -f {composeFile}"
@@ -45,7 +49,8 @@
             "restoreDump",
             "up",
             "down",
-            "dbRm"
+            "dbRm",
+            "openFolder"
           ]
         },
         {
@@ -84,17 +89,19 @@
             "npmStart",
             "npmStop",
             "browser",
-            "auth"
+            "auth",
+            "openFolder"
           ]
         }
       ],
-      "primary": "frontDeploy"
+      "primary": "frontDeploy",
+      "exclude": []
     }
   ],
   "actions": {
     "checkout": {
       "title": "Сменить ветку",
-      "icon": "⎇",
+      "icon": "git-branch",
       "params": [
         {
           "name": "branch",
@@ -125,7 +132,7 @@
     "down": {
       "title": "ddown",
       "hint": "Остановить контейнеры (все контейнеры docker; БД — штатно, остальное — за 2 с)",
-      "icon": "■",
+      "icon": "square",
       "steps": [
         {
           "title": "Остановить процесс dup",
@@ -152,7 +159,7 @@
     "dbRm": {
       "title": "dbRm",
       "hint": "Удалить данные БД (pgdata)",
-      "icon": "🗑",
+      "icon": "trash-2",
       "confirm": "Удалить {dbDataDir}/pgdata?",
       "steps": [
         {
@@ -165,8 +172,8 @@
     },
     "up": {
       "title": "dup",
-      "hint": "Поднять контейнеры и дождаться миграций",
-      "icon": "▶",
+      "hint": "Поднять контейнеры и дождаться миграций (dup)",
+      "icon": "play",
       "steps": [
         {
           "title": "docker compose up",
@@ -181,7 +188,7 @@
     "deploy": {
       "title": "Развернуть с нуля",
       "hint": "ddown → dbRm → снимок (если есть) → dup → сохранить снимок",
-      "icon": "⟳",
+      "icon": "rocket",
       "confirm": "Развернуть {project.name} с нуля? База будет удалена.",
       "steps": [
         {
@@ -219,7 +226,7 @@
     "restoreDump": {
       "title": "Накатить дамп",
       "hint": "Снимок дампа, если есть; иначе импорт (снимок сохранится) → dup",
-      "icon": "⇩",
+      "icon": "database-backup",
       "confirm": "База {dbName} будет пересоздана из {dump}. Продолжить?",
       "params": [
         {
@@ -295,7 +302,7 @@
     },
     "npmCi": {
       "title": "npm ci",
-      "icon": "⬇",
+      "icon": "package",
       "hint": "Пропускается, если package-lock.json и версия node не менялись с прошлой установки",
       "steps": [
         {
@@ -307,7 +314,7 @@
     },
     "npmStart": {
       "title": "npm start",
-      "icon": "▶",
+      "icon": "play",
       "steps": [
         {
           "title": "npm start",
@@ -324,7 +331,7 @@
     },
     "npmStop": {
       "title": "Стоп",
-      "icon": "■",
+      "icon": "square",
       "steps": [
         {
           "type": "stopService",
@@ -333,20 +340,20 @@
       ]
     },
     "browser": {
-      "title": "bbStart",
-      "hint": "Brave без CORS на странице планов",
-      "icon": "🌐",
+      "title": "Браузер",
+      "hint": "Браузер без CORS на странице фронтенда (с портом отладки для входа)",
+      "icon": "globe",
       "steps": [
         {
           "type": "detached",
-          "cmd": "brave-browser --user-data-dir='{browserProfile}' --disable-web-security --remote-debugging-port={debugPort} '{frontendUrl}'"
+          "cmd": "{browserCmd} --user-data-dir='{browserProfile}' --disable-web-security --remote-debugging-port={debugPort} '{frontendUrl}'"
         }
       ]
     },
     "frontDeploy": {
       "title": "Собрать и запустить",
-      "hint": "npm ci → npm start → bbStart → вход",
-      "icon": "⟳",
+      "hint": "npm ci → npm start → браузер → вход",
+      "icon": "rocket",
       "steps": [
         {
           "type": "action",
@@ -372,7 +379,7 @@
     },
     "pull": {
       "title": "Подтянуть",
-      "icon": "↓",
+      "icon": "arrow-down-to-line",
       "hint": "git fetch + git pull --ff-only (без merge-коммитов)",
       "steps": [
         {
@@ -389,7 +396,7 @@
     },
     "stash": {
       "title": "В stash",
-      "icon": "⇣",
+      "icon": "archive",
       "hint": "Убрать все изменения (включая новые файлы) в stash",
       "params": [
         {
@@ -409,7 +416,7 @@
     },
     "stashPop": {
       "title": "Из stash",
-      "icon": "⇡",
+      "icon": "archive-restore",
       "hint": "Вернуть изменения из stash",
       "params": [
         {
@@ -428,7 +435,7 @@
     },
     "auth": {
       "title": "Войти",
-      "icon": "🔑",
+      "icon": "key-round",
       "hint": "Получить токен по API и записать его в браузер (логин в «Настройках»)",
       "steps": [
         {
@@ -441,8 +448,8 @@
     },
     "quickStart": {
       "title": "Запустить и войти",
-      "icon": "▶",
-      "hint": "npm start → bbStart → вход (без npm ci)",
+      "icon": "zap",
+      "hint": "npm start → браузер → вход (без npm ci)",
       "steps": [
         {
           "type": "action",
@@ -464,7 +471,7 @@
     },
     "snapSave": {
       "title": "Сохранить текущую БД",
-      "icon": "⎙",
+      "icon": "save",
       "hint": "Создаёт новый снимок (старые не трогает). БД остановится на несколько секунд",
       "params": [
         {
@@ -488,7 +495,7 @@
     },
     "snapRestore": {
       "title": "Восстановить БД",
-      "icon": "↺",
+      "icon": "history",
       "danger": true,
       "hint": "Заменить базу снимком → dup (докатит миграции ветки)",
       "confirm": "Текущая база будет заменена снимком «{snapshot}», затем dup докатит миграции ветки. Несохранённое состояние базы пропадёт. Продолжить?",
@@ -515,11 +522,12 @@
           "type": "action",
           "action": "up"
         }
-      ]
+      ],
+      "internal": true
     },
     "snapDelete": {
       "title": "Удалить снимок",
-      "icon": "✕",
+      "icon": "x",
       "danger": true,
       "confirm": "Удалить снимок {snapshot}?",
       "params": [
@@ -535,11 +543,12 @@
           "type": "snapshotDelete",
           "id": "{snapshot}"
         }
-      ]
+      ],
+      "internal": true
     },
     "npmCiForce": {
       "title": "npm ci (заново)",
-      "icon": "⬇",
+      "icon": "refresh-cw",
       "hint": "Всегда переустановить node_modules",
       "steps": [
         {
@@ -548,6 +557,19 @@
           "cmd": "npm ci && H=$(cat package-lock.json <(node -v) | sha256sum | cut -c1-64) && mkdir -p node_modules && echo \"$H\" > node_modules/.dev-panel-lock"
         }
       ]
+    },
+    "openFolder": {
+      "title": "Открыть папку",
+      "icon": "folder-open",
+      "hint": "Открыть папку проекта в файловом менеджере",
+      "steps": [
+        {
+          "title": "xdg-open",
+          "type": "detached",
+          "cmd": "xdg-open \"{project.path}\""
+        }
+      ]
     }
-  }
+  },
+  "port": 7777
 }

@@ -8,6 +8,10 @@
 #   dev-panel logs      лог панели
 #   dev-panel fg        запустить в текущем терминале
 #   dev-panel autostart on|off   запуск при входе в систему
+#   dev-panel setup     интерактивная настройка (папка репозиториев, браузер, логин)
+#   dev-panel doctor    проверить окружение (node, docker, git, zstd, браузер…)
+#   dev-panel desktop   добавить Dev Panel в меню приложений (desktop off — убрать)
+#   dev-panel version
 set -euo pipefail
 
 # При автозапуске из графической сессии ~/.local/bin (где node) может не быть в PATH
@@ -17,7 +21,7 @@ DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/dev-panel"
 PIDFILE="$STATE/pid"
 LOG="$STATE/panel.log"
-PORT="$(node -e "console.log(require('$DIR/config.json').port || 7777)")"
+PORT="$(node "$DIR/lib/cli.js" port 2>/dev/null || echo 7777)"
 URL="http://localhost:$PORT"
 mkdir -p "$STATE"
 
@@ -59,8 +63,9 @@ APP_CLASS="DevPanel"
 APP_PROFILE="${XDG_CONFIG_HOME:-$HOME/.config}/dev-panel/app-browser"
 
 app_browser() {
-  if [[ -n "${DEV_PANEL_BROWSER:-}" ]]; then echo "$DEV_PANEL_BROWSER"; return; fi
-  for b in brave-browser google-chrome chromium chromium-browser; do
+  local c; c="$(node "$DIR/lib/cli.js" app-browser 2>/dev/null || true)"
+  if [[ -n "$c" ]]; then echo "$c"; return; fi
+  for b in brave-browser google-chrome google-chrome-stable chromium chromium-browser; do
     command -v "$b" >/dev/null && { echo "$b"; return; }
   done
 }
@@ -75,6 +80,31 @@ open_ui() {
     --no-first-run --no-default-browser-check --window-size=1500,950 >/dev/null 2>&1 &
 }
 
+desktop_entry() {
+  local apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+  local icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+  case "${1:-on}" in
+    on)
+      mkdir -p "$apps" "$icons"
+      cp "$DIR/assets/dev-panel.svg" "$icons/dev-panel.svg"
+      cat >"$apps/dev-panel.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Dev Panel
+Comment=Ветки, docker, дампы и фронтенд CalPlan
+Exec=$DIR/bin/dev-panel
+Icon=dev-panel
+Terminal=false
+Categories=Development;
+StartupWMClass=$APP_CLASS
+DESKTOP
+      command -v update-desktop-database >/dev/null && update-desktop-database "$apps" >/dev/null 2>&1 || true
+      echo "Dev Panel добавлена в меню приложений ($apps/dev-panel.desktop)" ;;
+    off) rm -f "$apps/dev-panel.desktop" "$icons/dev-panel.svg"; echo "Dev Panel убрана из меню приложений" ;;
+    *) echo "dev-panel desktop [on|off]" >&2; exit 1 ;;
+  esac
+}
+
 case "${1:-open}" in
   open)    start; open_ui ;;
   web)     start; xdg-open "$URL" >/dev/null 2>&1 & ;;
@@ -84,6 +114,10 @@ case "${1:-open}" in
   status)  running && echo "запущена (pid $(cat "$PIDFILE")) — $URL" || echo "не запущена" ;;
   logs)    tail -n 200 -f "$LOG" ;;
   fg)      cd "$DIR" && exec node server.js ;;
+  setup)   shift; exec node "$DIR/lib/cli.js" setup "$@" ;;
+  doctor)  exec node "$DIR/lib/cli.js" doctor ;;
+  version) node "$DIR/lib/cli.js" version ;;
+  desktop) desktop_entry "${2:-on}" ;;
   autostart)
     AUTOSTART="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/dev-panel.desktop"
     case "${2:-}" in

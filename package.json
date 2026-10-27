@@ -1,0 +1,14 @@
+{
+  "name": "dev-panel",
+  "version": "1.0.0",
+  "description": "Локальная веб-панель для рутины разработчика: ветки, docker compose, дампы БД, фронтенд",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22" },
+  "bin": { "dev-panel": "bin/dev-panel" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "build:installer": "bash scripts/build-installer.sh"
+  }
+}
