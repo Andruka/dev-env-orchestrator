@@ -164,7 +164,7 @@ dev-panel desktop      # значок в меню приложений
 | `snapshotRestore` | `kind`, `dataDir`, `migrationsDir` / `dumpFile` / `id`, `flag?` | восстанавливает pgdata из подходящего снимка, ставит флаг `restored` |
 | `snapshotSave` | `kind`, `dataDir`, `stopCmd?`, `startCmd?`, `keep?` | сохраняет pgdata в снимок |
 | `snapshotDelete` | `id` | удаляет снимок |
-| `browserAuth` | `url`, `debugPort` | вход по API и запись токенов в localStorage браузера |
+| `browserAuth` | `url`, `debugPort`, `clearCache?` | вход по API и запись токенов в localStorage браузера; перед этим чистит кеш браузера (куки и localStorage не трогает), `clearCache: false` отключает |
 | `action` | `action` | вставляет шаги другой кнопки |
 
 У любого шага может быть `if` / `unless` — имя флага, выставленного предыдущим шагом (например, `"unless": "restored"`).

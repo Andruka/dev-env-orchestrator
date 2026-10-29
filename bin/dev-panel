@@ -25,7 +25,14 @@ PORT="$(node "$DIR/lib/cli.js" port 2>/dev/null || echo 7777)"
 URL="http://localhost:$PORT"
 mkdir -p "$STATE"
 
-running() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
+# pid из файла может остаться от прошлой сессии (после перезагрузки номер достаётся чужому процессу),
+# поэтому проверяем, что это именно наш node server.js из этого каталога
+running() {
+  [[ -f "$PIDFILE" ]] || return 1
+  local p; p="$(cat "$PIDFILE" 2>/dev/null)"
+  [[ "$p" =~ ^[0-9]+$ ]] && kill -0 "$p" 2>/dev/null || return 1
+  [[ "$(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null)" == *server.js* && "$(readlink "/proc/$p/cwd" 2>/dev/null)" == "$DIR" ]]
+}
 
 start() {
   if running; then return; fi
