@@ -6,8 +6,7 @@ const TABS = [
   ['repos', 'folder-open', 'Репозитории'],
   ['buttons', 'layers', 'Кнопки'],
   ['stands', 'server', 'Стенды'],
-  ['env', 'sliders-horizontal', 'Окружение'],
-  ['login', 'key-round', 'Вход'],
+  ['env', 'sliders-horizontal', 'Пути и порты'],
   ['look', 'palette', 'Оформление'],
   ['doctor', 'stethoscope', 'Проверка'],
   ['help', 'book-open', 'Справка'],
@@ -19,6 +18,7 @@ const SOURCE_LABEL = { auto: 'найден автоматически', manual: 
 async function openSettings(tab) {
   const dlg = $('#settings');
   if (tab) S.tab = tab;
+  if (S.tab === 'login') { S.tab = 'stands'; S.standsSub = 'login'; } // вход живёт внутри «Стенды»
   if (!dlg.open) {
     dlg.innerHTML = `<nav class="settings-nav" aria-label="Разделы настроек" id="setNav"></nav>
       <div class="settings-main"><div class="settings-body" id="setBody" tabindex="-1"></div>
@@ -26,6 +26,7 @@ async function openSettings(tab) {
     dlg.showModal();
     dlg.onclick = settingsClick;
     dlg.onchange = settingsChange;
+    dlg.oninput = e => { if (e.target.id === 'themeQ') { S.themeQ = e.target.value; applyThemeSearch(); } };
     dlg.onkeydown = e => { if (e.key === 'Escape' && !document.querySelector('dialog#editor[open], dialog#picker[open], dialog#dialog[open]')) { e.preventDefault(); closeSettings(); } };
     dlg.oncancel = e => { e.preventDefault(); if (!document.querySelector('dialog#editor[open], dialog#picker[open], dialog#dialog[open]')) closeSettings(); };
     dlg.onclose = () => { S.stand = null; S.newSwap = false; };
@@ -63,7 +64,8 @@ function renderSettings() {
   const scroll = body.scrollTop;
   body.innerHTML = PANES[S.tab]();
   body.scrollTop = scroll;
-  if (S.tab === 'login') loadLogin();
+  if (S.tab === 'look') applyThemeSearch();
+  if (S.tab === 'stands' && S.standsSub === 'login') loadLogin();
 }
 
 // Любое изменение настроек: отправить, перечитать конфиг панели и обновить окно
@@ -117,7 +119,7 @@ function reposPane() {
         <label>Корневая папка CalPlan</label>
         <div class="input-btn"><input readonly value="${esc(m.vars.calplanRoot || '')}" placeholder="не выбрана" aria-label="Корневая папка CalPlan">
           <button type="button" class="primary" data-pick-var="calplanRoot">${icon('folder-open')} Выбрать…</button></div>
-        <span class="help">От неё считаются автопоиск бэкенда, папка клиента, дампы (<span class="mono">dbDumps</span>) и данные БД (<span class="mono">calplanDb</span>). Отдельные пути можно поменять в разделе «Окружение».${root ? '' : ' Пока не выбрана.'}</span>
+        <span class="help">От неё считаются автопоиск бэкенда, папка клиента, дампы (<span class="mono">dbDumps</span>) и данные БД (<span class="mono">calplanDb</span>). Отдельные пути можно поменять в разделе «Пути и порты».${root ? '' : ' Пока не выбрана.'}</span>
       </div>
     </div>
     ${groups}
@@ -187,7 +189,7 @@ const VAR_FIELDS = [
     ['browserCmd', 'Команда браузера', 'text', 'Пусто — выбрать автоматически (Brave, Chrome, Chromium)'],
     ['browserProfile', 'Профиль браузера', 'dir', 'Отдельный профиль для разработки'],
     ['debugPort', 'Порт отладки браузера', 'number', 'Через него панель входит во фронтенд'],
-    ['authFollowsEnv', 'Вход следует за стендом', 'bool', 'Логин идёт на хост и порт из BACKEND_URL активного public/config.js (см. «Стенды»); путь и учётка — из раздела «Вход»'],
+    ['authFollowsEnv', 'Вход следует за стендом', 'bool', 'Логин идёт на хост и порт из BACKEND_URL активного public/config.js (см. «Стенды»); путь и учётка — из «Стенды → Общий вход»'],
   ]],
   ['Снимки БД', [
     ['snapshotsEnabled', 'Создавать снимки БД', 'bool', 'Выключите, если не нужны или не хватает места: уже сохранённые снимки останутся и восстанавливаются'],
@@ -280,37 +282,82 @@ const readLogin = () => ({
 /* ---------- Оформление ---------- */
 
 function lookPane() {
-  const card = (id, label, mode, hint) => `<button type="button" class="theme-card" role="radio" aria-checked="${themeState.pref === id}" data-theme-pick="${id}" title="${esc(hint)}"
+  const favs = store.get('themeFavs', []);
+  const card = (id, label, mode, hint) => `<div class="theme-wrap" data-tq="${esc(`${label} ${mode} ${hint}`.toLowerCase())}">
+    <button type="button" class="theme-card" role="radio" aria-checked="${themeState.pref === id}" data-theme-pick="${id}" title="${esc(hint)}"
     ${id === 'auto' ? '' : `data-theme="${id}" style="--pv-bg:var(--bg);--pv-surface:var(--surface);--pv-line:var(--line);--pv-line-strong:var(--line-strong);--pv-accent:var(--accent);--pv-alive:var(--alive);--pv-text:var(--text)"`}>
     <span class="pv" ${id === 'auto' ? 'style="background:linear-gradient(90deg,#0d0f14 50%,#eef1f6 50%);height:112px"' : ''}>
       ${id === 'auto' ? '' : `<span class="pv-bar"><i></i><i></i><i></i></span><span class="pv-body"><span class="pv-side"><span class="pv-line a"></span><span class="pv-line s"></span><span class="pv-line s"></span></span><span class="pv-main"><span class="pv-line g"></span><span class="pv-line"></span><span class="pv-line s"></span></span></span>`}
     </span>
     <span class="meta"><b>${esc(label)}</b><span class="tag">${esc(mode)}</span></span>
-    <span class="tick">${icon('check')}</span></button>`;
+    <span class="tick">${icon('check')}</span></button>
+    ${id === 'auto' ? '' : `<button type="button" class="fav" aria-pressed="${favs.includes(id)}" data-theme-fav="${id}" aria-label="В избранное: ${esc(label)}" title="${favs.includes(id) ? 'Убрать из избранного' : 'В избранное'}">${icon('star')}</button>`}
+    </div>`;
   const f = S.themeFilter || 'all';
   const shown = THEMES.filter(t => f === 'all' || (f === 'dark') === (t.mode === 'тёмная'));
+  const section = (key, title, help, inner, count) => `<div class="theme-sec" data-sec="${key}"><div class="sec-title">${esc(title)} <span class="tag" data-count>${count}</span></div>${help ? `<p class="help" style="margin:0 0 10px">${esc(help)}</p>` : ''}
+      <div class="theme-grid" role="radiogroup" aria-label="${esc(title)}">${inner}</div></div>`;
+  const favItems = favs.map(id => shown.find(t => t.id === id)).filter(Boolean);
   const sections = [
-    ['base', 'Базовые', ''],
-    ['soft', 'Мягкие, для долгой работы', 'Приглушённый контраст, без чисто белого и чёрного, тёплые тона — меньше нагрузка на глаза.'],
-    ...Object.entries(THEME_GROUPS).map(([g, title]) => [g, title, g === 'editor' ? 'Переработанные версии любимых схем редакторов и терминалов; контраст подогнан под AA.' : '']),
-  ].map(([g, title, help]) => {
-    const items = shown.filter(t => t.group === g);
-    if (!items.length) return '';
-    return `<div class="sec-title">${esc(title)} <span class="tag">${items.length}</span></div>${help ? `<p class="help" style="margin:0 0 10px">${esc(help)}</p>` : ''}
-      <div class="theme-grid" role="radiogroup" aria-label="${esc(title)}">${(g === 'base' && f === 'all' ? card('auto', 'Как в системе', 'авто', 'День или Графит — по настройке ОС') : '') + items.map(t => card(t.id, t.label, t.mode, t.hint)).join('')}</div>`;
-  }).join('');
+    favItems.length ? section('fav', 'Избранное', '', favItems.map(t => card(t.id, t.label, t.mode, t.hint)).join(''), favItems.length) : '',
+    ...[
+      ['base', 'Базовые', ''],
+      ['soft', 'Мягкие, для долгой работы', 'Приглушённый контраст, без чисто белого и чёрного, тёплые тона — меньше нагрузка на глаза.'],
+      ...Object.entries(THEME_GROUPS).map(([g, title]) => [g, title, g === 'editor' ? 'Переработанные версии любимых схем редакторов и терминалов; контраст подогнан под AA.' : g === 'fun' ? 'Для настроения. Все тоже проходят проверку контраста.' : '']),
+    ].map(([g, title, help]) => {
+      const items = shown.filter(t => t.group === g);
+      if (!items.length) return '';
+      return section(g, title, help, (g === 'base' && f === 'all' ? card('auto', 'Как в системе', 'авто', 'Светлая или тёмная — по настройке ОС; при включённом повышенном контрасте — «Контраст»') : '') + items.map(t => card(t.id, t.label, t.mode, t.hint)).join(''), items.length);
+    }),
+  ].join('');
+  const opt = (list, cur) => list.map(t => `<option value="${t.id}" ${t.id === cur ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+  const [curL, curD] = [store.get('autoLight', 'daylight'), store.get('autoDark', 'graphite')];
+  const perm = 'Notification' in window ? Notification.permission : 'denied';
   return `<h2 class="pane-title">Оформление</h2>
     <p class="pane-lead">Тема применяется сразу и запоминается. Всего тем: ${THEMES.length}. Все проверены на контраст текста (WCAG AA); для плохого зрения или бликов есть «Контраст».</p>
-    <div class="seg" role="group" aria-label="Показать темы">
-      ${[['all', 'Все'], ['dark', 'Тёмные'], ['light', 'Светлые']].map(([v, l]) => `<button type="button" data-theme-filter="${v}" aria-pressed="${f === v}">${l}</button>`).join('')}
+    <div class="theme-tools">
+      <div class="seg" role="group" aria-label="Показать темы">
+        ${[['all', 'Все'], ['dark', 'Тёмные'], ['light', 'Светлые']].map(([v, l]) => `<button type="button" data-theme-filter="${v}" aria-pressed="${f === v}">${l}</button>`).join('')}
+      </div>
+      <input id="themeQ" type="search" class="theme-q" placeholder="Найти тему…" aria-label="Найти тему" value="${esc(S.themeQ || '')}" autocomplete="off" spellcheck="false">
     </div>
+    <p id="themeNone" class="help" hidden>Ничего не найдено — попробуйте другое слово или сбросьте фильтр.</p>
     ${sections}
+    <div class="sec-title">«Как в системе» подбирает</div>
+    <div class="row2 even">
+      <div class="field"><label for="autoLight">Когда в ОС светлая тема</label><select id="autoLight" data-auto-pair="autoLight">${opt(THEMES.filter(t => t.mode === 'светлая'), curL)}</select></div>
+      <div class="field"><label for="autoDark">Когда в ОС тёмная тема</label><select id="autoDark" data-auto-pair="autoDark">${opt(THEMES.filter(t => t.mode === 'тёмная'), curD)}</select></div>
+    </div>
+    <p class="help">Если в ОС включён повышенный контраст, выбирается «Контраст». Работает, когда выбрана карточка «Как в системе».</p>
     <div class="sec-title">Плотность</div>
     <div class="seg" role="group" aria-label="Плотность">
       <button type="button" data-set-density="comfortable" aria-pressed="${themeState.density === 'comfortable'}">Обычная</button>
       <button type="button" data-set-density="compact" aria-pressed="${themeState.density === 'compact'}">Компактная</button>
     </div>
-    <p class="help">Компактная плотность помещает больше проектов на экран.</p>`;
+    <p class="help">Компактная плотность помещает больше проектов на экран.</p>
+    <div class="sec-title">Уведомления о завершении задач</div>
+    <label class="check"><input type="checkbox" data-pref-check="notify" ${store.get('notify', true) !== false ? 'checked' : ''}>
+      <span>Системное уведомление, когда окно панели не в фокусе<br><span class="help">${perm === 'granted' ? 'Браузер разрешил уведомления.' : perm === 'denied' ? 'Браузер блокирует уведомления — разрешите их для адреса панели в настройках сайта.' : 'Браузер спросит разрешение при включении или при первом запуске задачи.'}</span></span></label>
+    <label class="check"><input type="checkbox" data-pref-check="sound" ${store.get('sound', true) !== false ? 'checked' : ''}>
+      <span>Короткий звук: один сигнал — успех, низкий двойной — ошибка<br><span class="help">Звучит, только пока вы в другом окне, чтобы не отвлекать</span></span></label>
+    <div style="display:flex;gap:8px;margin-top:10px"><button type="button" data-notify-test>${icon('volume-2')} Проверить уведомление и звук</button></div>`;
+}
+
+// Поиск тем: прячем карточки без совпадения, не перерисовывая окно (иначе поле теряет фокус)
+function applyThemeSearch() {
+  const q = (S.themeQ || '').trim().toLowerCase();
+  const root = $('#setBody');
+  if (!root) return;
+  let any = false;
+  root.querySelectorAll('.theme-sec').forEach(sec => {
+    let n = 0;
+    sec.querySelectorAll('.theme-wrap').forEach(w => { const hit = !q || w.dataset.tq.includes(q); w.hidden = !hit; if (hit) n++; });
+    sec.hidden = n === 0;
+    sec.querySelector('[data-count]').textContent = n;
+    if (n) any = true;
+  });
+  const none = $('#themeNone');
+  if (none) none.hidden = any;
 }
 
 /* ---------- Проверка окружения ---------- */
@@ -340,7 +387,7 @@ function doctorPane() {
       <li>Установить <b>Node.js 22+</b>, <b>git</b>, <b>docker</b> с плагином compose и <b>zstd</b> (панель их не ставит).</li>
       <li>Добавить себя в группу docker: <span class="mono">sudo usermod -aG docker $USER</span> и перезайти в систему.</li>
       <li>Один раз открыть Brave/Chrome и принять условия первого запуска, если браузер ещё не использовался.</li>
-      <li>Указать корневую папку CalPlan и логин — в разделах «Репозитории» и «Вход».</li>
+      <li>Указать корневую папку CalPlan и логин — в разделах «Репозитории» и «Стенды → Общий вход».</li>
     </ol></div>`;
 }
 
@@ -384,7 +431,16 @@ function helpPane() {
     </div>`;
 }
 
-const PANES = { repos: reposPane, buttons: buttonsPane, stands: standsPane, env: envPane, login: loginPane, look: lookPane, doctor: doctorPane, help: helpPane };
+// «Стенды» и общий вход — одно место: у стенда свои файлы и свои учётные данные, у остальных — общие
+function standsTab() {
+  const sub = S.standsSub || 'list';
+  return `<div class="seg" role="group" aria-label="Раздел">
+    <button type="button" data-stands-sub="list" aria-pressed="${sub === 'list'}">${icon('server')} Мои стенды</button>
+    <button type="button" data-stands-sub="login" aria-pressed="${sub === 'login'}">${icon('key-round')} Общий вход</button></div>
+    ${sub === 'login' ? loginPane() : standsPane()}`;
+}
+
+const PANES = { repos: reposPane, buttons: buttonsPane, stands: standsTab, env: envPane, look: lookPane, doctor: doctorPane, help: helpPane };
 
 /* ---------- обработчики ---------- */
 
@@ -395,6 +451,7 @@ async function settingsClick(e) {
   const q = sel => { const r = t.closest(sel); return r && root.contains(r) ? r : null; };
   let el;
   if (q('#setClose')) return closeSettings();
+  if ((el = q('[data-stands-sub]'))) { S.standsSub = el.dataset.standsSub; return renderSettings(); }
   if ((el = q('[data-stab]'))) { window.standDirty?.(); S.tab = el.dataset.stab; renderSettings(); if (S.tab === 'doctor' && !S.doctor) runDoctor(); return; }
 
   // репозитории
@@ -478,6 +535,12 @@ async function settingsClick(e) {
   if (q('#sTest')) return testLogin();
 
   // оформление
+  if ((el = q('[data-theme-fav]'))) {
+    const id = el.dataset.themeFav, favs = store.get('themeFavs', []);
+    setPref('themeFavs', favs.includes(id) ? favs.filter(x => x !== id) : [...favs, id]);
+    return renderSettings();
+  }
+  if (q('[data-notify-test]')) return testNotify();
   if ((el = q('[data-theme-filter]'))) { S.themeFilter = el.dataset.themeFilter; return renderSettings(); }
   if ((el = q('[data-theme-pick]'))) { setTheme(el.dataset.themePick); return renderSettings(); }
   if ((el = q('[data-set-density]'))) { setDensity(el.dataset.setDensity); return renderSettings(); }
@@ -490,6 +553,13 @@ async function settingsClick(e) {
 }
 
 async function settingsChange(e) {
+  const t = e.target;
+  if (t.dataset.autoPair) return setPref(t.dataset.autoPair, t.value);
+  if (t.dataset.prefCheck) {
+    setPref(t.dataset.prefCheck, t.checked);
+    if (t.dataset.prefCheck === 'notify' && t.checked && 'Notification' in window && Notification.permission === 'default') { await Notification.requestPermission(); renderSettings(); }
+    return;
+  }
   if (e.target.id === 'importFile') return importBackup(e.target.files[0]);
   standsChange(e);
 }

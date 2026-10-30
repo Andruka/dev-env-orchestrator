@@ -69,19 +69,25 @@ function renderEnv() {
   document.title = job ? `◌ ${pst?.progress != null ? pst.progress + '% · ' : ''}${job.title} — Dev Panel` : 'Dev Panel';
 }
 
-// Стенд фронтенда и входа, а при расхождении с локальным бэкенд-процессом — предупреждение (иначе запросы получат 401)
+// Стенд фронтенда и входа, а при расхождении с локальным бэкенд-процессом — предупреждение (иначе запросы получат 401).
+// Плашка — кнопка: клик открывает список стендов для переключения в один шаг.
 function standChip() {
   const sc = state.status.stand;
-  if (!sc?.front) return '';
-  const front = sc.frontTitle || sc.front;
-  const bad = (sc.mismatch || [])[0];
+  const hasEnvs = (state.config.envs || []).length > 0;
+  if (!sc?.front && !hasEnvs) return '';
+  const open = document.querySelector('.pop-menu') ? 'true' : 'false';
+  const attrs = hasEnvs ? `class="env-item off click" data-stand-menu role="button" tabindex="0" aria-haspopup="menu" aria-expanded="${open}"` : 'class="env-item off"';
+  const caret = hasEnvs ? icon('chevron-down') : '';
+  const how = hasEnvs ? '\n\nКлик — переключить стенд.' : '';
+  const front = sc?.front ? (sc.frontTitle || sc.front) : ((state.config.envs || []).find(standActive)?.title || 'не выбран');
+  const bad = (sc?.mismatch || [])[0];
   if (bad) {
     const back = bad.standTitle || bad.stand;
-    return `<div class="env-item off" role="status" title="${esc(`Фронтенд и вход панели идут на стенд ${front}, а бэкенд на :${bad.port} (процесс ${bad.process}) запущен с окружением ${back}. Токен стенда ${front} бэкенд не примет (401). Перезапустите бэкенд с окружением ${front}: переменные — кнопка «Для IDE» у стенда; или переключите стенд на ${back}.`)}">
-      <span class="dot warn"></span><span class="k">Стенд</span><span class="v">фронт и вход: ${esc(front)}</span><span class="v warn">бэкенд :${bad.port}: ${esc(back)}</span></div>`;
+    return `<div ${attrs} title="${esc(`Фронтенд и вход панели идут на стенд ${front}, а бэкенд на :${bad.port} (процесс ${bad.process}) запущен с окружением ${back}. Токен стенда ${front} бэкенд не примет (401). Перезапустите бэкенд с окружением ${front}: переменные — кнопка «Для IDE» у стенда; или переключите стенд на ${back}.${how}`)}">
+      <span class="dot warn"></span><span class="k">Стенд</span><span class="v">фронт и вход: ${esc(front)}</span><span class="v warn">бэкенд :${bad.port}: ${esc(back)}</span>${caret}</div>`;
   }
-  const be = (sc.backends || []).find(b => b.stand);
-  return `<div class="env-item off" title="${esc(`Фронтенд и вход панели подключены к стенду ${front}${be ? `; бэкенд на :${be.port} работает с тем же окружением` : ''}`)}"><span class="dot ${be ? 'alive' : ''}"></span><span class="k">Стенд</span><span class="v">${esc(front)}</span></div>`;
+  const be = (sc?.backends || []).find(b => b.stand);
+  return `<div ${attrs} title="${esc(`${sc?.front ? `Фронтенд и вход панели подключены к стенду ${front}${be ? `; бэкенд на :${be.port} работает с тем же окружением` : ''}` : 'Стенд фронтенда не определён'}${how}`)}"><span class="dot ${be ? 'alive' : ''}"></span><span class="k">Стенд</span><span class="v">${esc(front)}</span>${caret}</div>`;
 }
 
 const authText = () => ({
@@ -120,9 +126,11 @@ function actionButton(actionId, project, { primary = false } = {}) {
   if (!a) return '';
   const busy = runningJob(project.group);
   const cls = [primary && 'primary', a.danger && 'danger'].filter(Boolean).join(' ');
-  const title = busy ? `Занято: выполняется «${busy.title}» (${busy.project})` : a.hint || '';
+  // у главной кнопки выбранного проекта есть горячая клавиша: Enter
+  const key = primary && project.id === state.sel && !busy;
+  const title = busy ? `Занято: выполняется «${busy.title}» (${busy.project})` : `${a.hint || ''}${key ? `${a.hint ? '\n' : ''}Горячая клавиша: Enter` : ''}`;
   return `<button class="${cls}" ${busy ? 'disabled' : ''} data-project="${esc(project.id)}" data-action="${esc(actionId)}" title="${esc(title)}">
-    <span class="btn-ic">${icon(a.icon)}</span>${esc(a.title)}</button>`;
+    <span class="btn-ic">${icon(a.icon)}</span>${esc(a.title)}${key ? '<kbd class="key-hint">Enter</kbd>' : ''}</button>`;
 }
 
 function welcomeHtml() {
@@ -267,7 +275,7 @@ async function runAction(projectId, actionId, preset = {}) {
     state.tab = 'jobs';
     state.jobId = job.id;
     renderAll();
-    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    if (store.get('notify', true) !== false && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -289,7 +297,7 @@ function paletteItems() {
   const nav = [
     ['repos', 'folder-open', 'Репозитории', 'настройки репозитории добавить удалить папка проводник'],
     ['buttons', 'layers', 'Кнопки и команды', 'настройки кнопки команды добавить скрыть изменить сбросить'],
-    ['env', 'sliders-horizontal', 'Окружение и пути', 'настройки пути переменные порты браузер дампы'],
+    ['env', 'sliders-horizontal', 'Пути и порты', 'настройки окружение пути переменные порты браузер дампы'],
     ['login', 'key-round', 'Вход во фронтенд', 'настройки вход логин пароль'],
     ['look', 'palette', 'Оформление', 'настройки тема цвет оформление плотность'],
     ['doctor', 'stethoscope', 'Проверка окружения', 'диагностика проверка docker zstd окружение'],
@@ -389,7 +397,7 @@ function renderJobView() {
   }
   state.jobId = job.id;
   const params = job.params && Object.values(job.params).filter(Boolean).join(', ');
-  const others = state.jobs.filter(j => j.id !== job.id).slice(0, 6);
+  const others = state.jobs.filter(j => j.id !== job.id).slice(0, 30);
   setHtml(el, `
     <div class="job-head">
       ${JOB_IC[job.status] || ''}
@@ -403,8 +411,8 @@ function renderJobView() {
         ${s.progress != null && s.status === 'running' ? `<span class="progress"><span class="bar"><i style="width:${s.progress}%"></i></span>${s.progress}%</span>` : '<span></span>'}</li>`).join('')}
     </ol>
     ${job.error ? `<div class="job-error">${esc(job.error)}</div>` : ''}
-    ${others.length ? `<div class="history">${others.map(j => `
-      <div class="history-row" role="button" tabindex="0" data-job="${j.id}">${JOB_IC[j.status] || ''} ${esc(j.title)} <span style="color:var(--faint)">${esc(j.project)}</span><span class="time">${fmtTime(j.startedAt)}</span></div>`).join('')}</div>` : ''}`);
+    ${others.length ? `<div class="history"><div class="history-title">История запусков</div><div class="history-list">${others.map(j => `
+      <div class="history-row" role="button" tabindex="0" data-job="${j.id}">${JOB_IC[j.status] || ''} ${esc(j.title)} <span style="color:var(--faint)">${esc(j.project)}</span><span class="time">${fmtWhen(j.startedAt)}</span></div>`).join('')}</div></div>` : ''}`);
 }
 
 function lineClass(l) {
@@ -438,16 +446,24 @@ const pendingLines = [];
 let flushRaf = null;
 let domLines = 0;
 
+// Фильтр лога: показываем только строки с введённым текстом (без учёта регистра)
+let logFilter = '';
+const logMatch = l => !logFilter || l.toLowerCase().includes(logFilter);
+
 function renderLogTail(scrollToEnd) {
   pendingLines.length = 0;
   const el = $('#log');
-  const lines = (currentLog() || []).slice(-MAX_DOM_LINES);
-  el.innerHTML = lines.map(lineHtml).join('\n');
+  const all = currentLog() || [];
+  const hit = logFilter ? all.filter(logMatch) : all;
+  const lines = hit.slice(-MAX_DOM_LINES);
+  el.innerHTML = lines.map(lineHtml).join('\n') || (logFilter ? '<span class="l-dim">Нет строк с таким текстом</span>' : '');
   domLines = lines.length;
+  $('#logCount').textContent = logFilter ? `${hit.length} из ${all.length}` : '';
   if (scrollToEnd) el.scrollTop = el.scrollHeight;
 }
 
 function appendLog(line) {
+  if (!logMatch(line)) return;
   pendingLines.push(line);
   if (!flushRaf) flushRaf = requestAnimationFrame(flushLog);
 }
@@ -490,13 +506,42 @@ function scheduleRender() {
   raf = requestAnimationFrame(() => { raf = null; renderEnv(); renderRepos(); renderTabs(); renderJobView(); });
 }
 
+// Звук: один сигнал — успех, низкий двойной — ошибка. Контекст создаём по первому клику (иначе браузер не даст играть)
+let audioCtx = null;
+document.addEventListener('pointerdown', () => { audioCtx ||= new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume?.(); }, { once: true });
+function beep(ok) {
+  if (!audioCtx) return;
+  const tone = (freq, at, dur) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = freq;
+    const t0 = audioCtx.currentTime + at;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + dur + 0.05);
+  };
+  if (ok) tone(880, 0, 0.28); else { tone(330, 0, 0.18); tone(330, 0.24, 0.22); }
+}
+
+// Окно не в фокусе: пользователь не видит тост — шлём системное уведомление и играем звук
+const windowAway = () => document.hidden || !document.hasFocus();
+function alertAway(title, body, ok) {
+  if (!windowAway()) return;
+  if (store.get('notify', true) !== false && 'Notification' in window && Notification.permission === 'granted') new Notification(title, { body });
+  if (store.get('sound', true) !== false) beep(ok);
+}
+
 function notifyDone(job) {
   const ok = job.status === 'done';
   const text = `${job.title} · ${job.project}: ${ok ? 'готово' : job.status === 'cancelled' ? 'отменено' : 'ошибка'} за ${fmtDur(job)}`;
   toast(text, ok ? 'ok' : 'err');
-  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-    new Notification('Dev Panel', { body: text + (job.error ? `\n${job.error}` : '') });
-  }
+  alertAway('Dev Panel', text + (job.error ? `\n${job.error}` : ''), ok);
+}
+
+// Кнопка «Проверить» в настройках: показывает, как это выглядит и звучит (без условия «окно не в фокусе»)
+function testNotify() {
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().then(renderSettings);
+  if ('Notification' in window && Notification.permission === 'granted') new Notification('Dev Panel', { body: 'Так выглядит уведомление о завершении задачи' });
+  beep(true);
+  toast('Проверка: если уведомления и звука нет, проверьте разрешения браузера и громкость', 'ok');
 }
 
 /* ---------- конфиг ---------- */
@@ -523,8 +568,11 @@ document.addEventListener('click', e => {
   if (sd) return runAction(sd.dataset.project, 'snapDelete', { snapshot: sd.dataset.snapDelete });
   const btn = t.closest('button[data-action]');
   if (btn) { e.stopPropagation(); return runAction(btn.dataset.project, btn.dataset.action); }
+  const sm = t.closest('[data-stand-menu]');
+  if (sm) return toggleStandMenu(sm);
+  if (!t.closest('.pop-menu')) closeStandMenu();
   const os = t.closest('[data-open-settings]');
-  if (os) return openSettings(os.dataset.openSettings);
+  if (os) { closeStandMenu(); return openSettings(os.dataset.openSettings); }
   const stop = t.closest('[data-stop-svc]');
   if (stop) return api(`/api/service/stop?name=${encodeURIComponent(stop.dataset.stopSvc)}`, {}).catch(err => toast(err.message, 'err'));
   const cancel = t.closest('[data-cancel]');
@@ -562,6 +610,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     return document.activeElement.click();
   }
+  if (e.key === 'Escape' && document.querySelector('.pop-menu')) { e.preventDefault(); const a = document.querySelector('[data-stand-menu]'); closeStandMenu(); return a?.focus(); }
   if (document.querySelector('dialog[open]') || typing) return;
   if (e.key === '?') { e.preventDefault(); return openSettings('help'); }
   if (!state.config) return;
@@ -585,6 +634,26 @@ $('#settingsBtn').onclick = () => openSettings();
 $('#themeBtn').onclick = () => openSettings('look');
 $('#helpBtn').onclick = () => openSettings('help');
 $('#logEnd').onclick = () => { const el = $('#log'); el.scrollTop = el.scrollHeight; };
+$('#logFind').oninput = e => { logFilter = e.target.value.trim().toLowerCase(); renderLogTail(true); };
+$('#logFind').onkeydown = e => { if (e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; logFilter = ''; renderLogTail(true); } };
+$('#logWrap').onclick = e => {
+  const on = $('#log').classList.toggle('nowrap');
+  e.currentTarget.setAttribute('aria-pressed', String(!on));
+  store.set('logWrap', !on);
+};
+if (store.get('logWrap', true) === false) { $('#log').classList.add('nowrap'); $('#logWrap').setAttribute('aria-pressed', 'false'); }
+$('#logSave').onclick = () => {
+  const lines = currentLog() || [];
+  if (!lines.length) return toast('Лог пуст', 'err');
+  const job = state.tab.startsWith('svc:') ? null : state.jobs.find(j => j.id === state.jobId);
+  const name = (job ? `${job.title}-${job.project}` : state.tab.slice(4)).replace(/[^\w.-]+/g, '_');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' }));
+  a.download = `${name}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.log`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast('Лог сохранён в папку загрузок', 'ok');
+};
 $('#logCopy').onclick = async () => {
   const text = (currentLog() || []).join('\n');
   try { await navigator.clipboard.writeText(text); toast('Лог скопирован', 'ok'); } catch { toast('Не удалось скопировать — выделите текст вручную', 'err'); }

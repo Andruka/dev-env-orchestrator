@@ -21,9 +21,24 @@ const THEMES = THEMES_BASE.concat(typeof THEMES_EXTRA !== 'undefined' ? THEMES_E
 
 const themeState = { pref: store.get('theme', 'auto'), density: store.get('density', 'comfortable') };
 
+const hasTheme = id => THEMES.some(t => t.id === id);
+
+// «Как в системе»: повышенный контраст в ОС → «Контраст»; иначе светлая или тёмная тема из выбранной пары
 function resolveTheme(pref) {
-  if (pref === 'auto') return matchMedia('(prefers-color-scheme: light)').matches ? 'daylight' : 'graphite';
-  return THEMES.some(t => t.id === pref) ? pref : 'graphite';
+  if (pref === 'auto') {
+    if (matchMedia('(prefers-contrast: more)').matches) return 'contrast';
+    const [light, dark] = [store.get('autoLight', 'daylight'), store.get('autoDark', 'graphite')];
+    return matchMedia('(prefers-color-scheme: light)').matches ? (hasTheme(light) ? light : 'daylight') : (hasTheme(dark) ? dark : 'graphite');
+  }
+  return hasTheme(pref) ? pref : 'graphite';
+}
+
+// Прочие настройки вида: хранятся и в браузере, и на сервере (как тема)
+const SYNCED_PREFS = ['notify', 'sound', 'themeFavs', 'autoLight', 'autoDark'];
+function setPref(key, value) {
+  store.set(key, value);
+  api('/api/prefs', { prefs: { [key]: value } }).catch(() => {});
+  if (key === 'autoLight' || key === 'autoDark') applyTheme();
 }
 
 function applyTheme() {
@@ -51,8 +66,11 @@ function syncPrefs(prefs = {}) {
   let changed = false;
   if (prefs.theme && prefs.theme !== themeState.pref) { themeState.pref = prefs.theme; store.set('theme', prefs.theme); changed = true; }
   if (prefs.density && prefs.density !== themeState.density) { themeState.density = prefs.density; store.set('density', prefs.density); changed = true; }
+  for (const k of SYNCED_PREFS) {
+    if (prefs[k] !== undefined && JSON.stringify(prefs[k]) !== JSON.stringify(store.get(k, null))) { store.set(k, prefs[k]); changed = true; }
+  }
   if (changed) applyTheme();
 }
 
-matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (themeState.pref === 'auto') applyTheme(); });
+for (const q of ['(prefers-color-scheme: light)', '(prefers-contrast: more)']) matchMedia(q).addEventListener('change', () => { if (themeState.pref === 'auto') applyTheme(); });
 applyTheme();

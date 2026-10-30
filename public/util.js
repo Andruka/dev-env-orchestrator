@@ -68,6 +68,16 @@ function morphNode(a, b) {
 }
 
 const fmtTime = ts => (ts ? new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '');
+// Для истории: сегодня — время, вчера и раньше — с датой
+function fmtWhen(ts) {
+  if (!ts) return '';
+  const d = new Date(ts), now = new Date();
+  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return hm;
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return `вчера ${hm}`;
+  return `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} ${hm}`;
+}
 function fmtDur(j) {
   const s = Math.round(((j.finishedAt || Date.now()) - j.startedAt) / 1000);
   return s >= 60 ? `${Math.floor(s / 60)} мин ${s % 60} с` : `${s} с`;

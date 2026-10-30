@@ -11,7 +11,10 @@
       try {
         var t = JSON.parse(localStorage.getItem('devpanel.theme')) || 'auto';
         var d = JSON.parse(localStorage.getItem('devpanel.density')) || 'comfortable';
-        if (t === 'auto') t = matchMedia('(prefers-color-scheme: light)').matches ? 'daylight' : 'graphite';
+        if (t === 'auto') {
+          var al = JSON.parse(localStorage.getItem('devpanel.autoLight')) || 'daylight', ad = JSON.parse(localStorage.getItem('devpanel.autoDark')) || 'graphite';
+          t = matchMedia('(prefers-contrast: more)').matches ? 'contrast' : matchMedia('(prefers-color-scheme: light)').matches ? al : ad;
+        }
         document.documentElement.dataset.theme = t;
         document.documentElement.dataset.density = d;
       } catch (e) { /* хранилище недоступно */ }
@@ -41,9 +44,14 @@
       <nav id="tabs" class="tabs" role="tablist" aria-label="Задачи и сервисы"></nav>
       <div id="jobView" class="job-view"></div>
       <div class="log-wrap">
-        <div class="log-tools">
+        <div class="log-tools" role="toolbar" aria-label="Лог">
+          <input id="logFind" class="log-find" type="search" placeholder="Фильтр строк…" aria-label="Фильтр строк лога" autocomplete="off" spellcheck="false">
+          <span id="logCount" class="log-count" aria-live="polite"></span>
+          <span class="spacer"></span>
+          <button id="logWrap" class="sm" aria-pressed="true" title="Переносить длинные строки"><span data-ic="text-wrap"></span>Перенос</button>
+          <button id="logSave" class="sm" title="Сохранить лог в файл"><span data-ic="download"></span>Сохранить</button>
           <button id="logCopy" class="sm" title="Копировать лог"><span data-ic="copy"></span>Копировать</button>
-          <button id="logEnd" class="sm" title="К концу лога"><span data-ic="arrow-down"></span></button>
+          <button id="logEnd" class="sm" title="К концу лога" aria-label="К концу лога"><span data-ic="arrow-down"></span></button>
         </div>
         <pre id="log" class="log" tabindex="0" aria-label="Лог"></pre>
       </div>

@@ -228,8 +228,8 @@ function standEditor(m) {
       <div class="row2 even"><div class="field"><label for="stLogin">Логин</label><input id="stLogin" value="${esc(d.login)}" autocomplete="off" ${invalidAttr('stLogin')}>${errMsg('stLogin')}</div>
         <div class="field"><label for="stPass">Пароль</label><input id="stPass" type="password" autocomplete="new-password" placeholder="${d.hasPassword ? '•••••• сохранён' : ''}"></div></div>
       <div class="field"><label for="stOrigin">Адрес бэкенда</label><input id="stOrigin" class="mono" value="${esc(d.origin || '')}" placeholder="определится по config.js или .env" spellcheck="false" autocomplete="off" ${invalidAttr('stOrigin')}>${errMsg('stOrigin')}
-        <span class="help">Логин и пароль подставятся, когда фронтенд подключён к этому адресу. Без логина используются общие данные из «Вход». Пароль: пусто — не менять.</span></div>`)}
-    ${sec('start', 'Страница фронтенда', 'как в «Окружение»', Boolean(d.startUrl), errOf('stStart'), `
+        <span class="help">Логин и пароль подставятся, когда фронтенд подключён к этому адресу. Без логина используются общие данные из «Общий вход» (вкладка рядом со списком стендов). Пароль: пусто — не менять.</span></div>`)}
+    ${sec('start', 'Страница фронтенда', 'как в «Пути и порты»', Boolean(d.startUrl), errOf('stStart'), `
       <div class="field"><label for="stStart">Адрес страницы</label><input id="stStart" class="mono" value="${esc(d.startUrl || '')}" placeholder="http://localhost:3000/objects/1841/plans" spellcheck="false" autocomplete="off" ${invalidAttr('stStart')}>${errMsg('stStart')}
         <span class="help">Что открывают «Браузер» и «Запустить и войти» на этом стенде. Id объекта зависит от базы, поэтому на разных стендах он разный.</span></div>`)}
     ${sec('ide', 'Переменные для IDE', 'необязательно', Boolean((d.ide || '').trim()), errOf('stIde'), `
@@ -301,7 +301,7 @@ function standsPane() {
     ${m.swaps.map(s => swapEditor(s, m)).join('')}
     ${S.newSwap ? newSwapEditor(m) : `<button type="button" data-ns-new>${icon('plus')} Добавить файл…</button>`}
     </details>
-    <div class="note" style="margin-top:14px">Вход во фронтенд следует за стендом: адрес логина берётся из <span class="mono">BACKEND_URL</span> активного config.js (переключатель — «Окружение → Фронтенд и браузер»).
+    <div class="note" style="margin-top:14px">Вход во фронтенд следует за стендом: адрес логина берётся из <span class="mono">BACKEND_URL</span> активного config.js (переключатель — «Пути и порты → Фронтенд и браузер»).
       Перед перезаписью файла с вашими ручными правками копия сохраняется в <span class="mono">~/.local/state/dev-panel/swap-backups</span> (последние 10).</div>`;
 }
 
@@ -410,4 +410,55 @@ function standsChange(e) {
   if (t.dataset?.swEnabled) return change('/api/swaps/save', { id: t.dataset.swEnabled, enabled: t.checked });
   if (t.dataset?.standSrc || t.dataset?.standProj) { syncStand(); return renderSettings(); }
   return null;
+}
+
+/* ---------- переключатель стенда в шапке ---------- */
+
+// Стенд «включён», если все его файлы для слотов выбранного репозитория (и репозиториев из других групп) уже лежат на месте
+function standActive(env) {
+  const entries = Object.entries(env.picks || {});
+  const p = findProject(state.sel) || allProjects()[0];
+  if (!entries.length || !p) return false;
+  const slots = Object.values(standProjects(p)).flatMap(id => projectStatus(id).swaps || []);
+  const mine = entries.filter(([id]) => slots.some(s => s.id === id));
+  return mine.length > 0 && mine.every(([id, rel]) => slots.find(s => s.id === id).active === rel);
+}
+
+function closeStandMenu() {
+  document.querySelector('.pop-menu')?.remove();
+  document.querySelector('[data-stand-menu]')?.setAttribute('aria-expanded', 'false');
+}
+
+function toggleStandMenu(anchor) {
+  if (document.querySelector('.pop-menu')) return closeStandMenu();
+  const p = findProject(state.sel) || allProjects()[0];
+  const busy = p && runningJob(p.group);
+  const menu = document.createElement('div');
+  menu.className = 'pop-menu';
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Стенд');
+  menu.innerHTML = `${(state.config.envs || []).map(e => {
+    const on = standActive(e);
+    return `<button type="button" role="menuitemradio" aria-checked="${on}" ${busy ? 'disabled' : ''} data-stand-pick="${esc(e.id)}" title="${esc(e.note || '')}">
+      <span class="chk">${on ? icon('check') : ''}</span>${esc(e.title)}${e.origin ? `<span class="sub mono">${esc(e.origin.replace(/^https?:\/\//, ''))}</span>` : ''}</button>`;
+  }).join('')}${busy ? `<div class="pop-note">Занято: выполняется «${esc(busy.title)}»</div>` : ''}
+    <hr><button type="button" role="menuitem" data-open-settings="stands">${icon('settings')}Настроить стенды…</button>`;
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${r.bottom + 6}px`;
+  menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 320))}px`;
+  document.body.appendChild(menu);
+  anchor.setAttribute('aria-expanded', 'true');
+  const items = () => [...menu.querySelectorAll('button:not(:disabled)')];
+  (menu.querySelector('[aria-checked="true"]:not(:disabled)') || items()[0])?.focus();
+  menu.onclick = async e => {
+    const b = e.target.closest('[data-stand-pick]');
+    if (b) { closeStandMenu(); await applyStand(b.dataset.standPick, p.id); anchor.focus?.(); }
+  };
+  menu.onkeydown = e => {
+    const list = items();
+    const i = list.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    else if (e.key === 'Tab') closeStandMenu();
+  };
 }
