@@ -287,17 +287,24 @@ function lookPane() {
     </span>
     <span class="meta"><b>${esc(label)}</b><span class="tag">${esc(mode)}</span></span>
     <span class="tick">${icon('check')}</span></button>`;
+  const f = S.themeFilter || 'all';
+  const shown = THEMES.filter(t => f === 'all' || (f === 'dark') === (t.mode === 'тёмная'));
+  const sections = [
+    ['base', 'Базовые', ''],
+    ['soft', 'Мягкие, для долгой работы', 'Приглушённый контраст, без чисто белого и чёрного, тёплые тона — меньше нагрузка на глаза.'],
+    ...Object.entries(THEME_GROUPS).map(([g, title]) => [g, title, g === 'editor' ? 'Переработанные версии любимых схем редакторов и терминалов; контраст подогнан под AA.' : '']),
+  ].map(([g, title, help]) => {
+    const items = shown.filter(t => t.group === g);
+    if (!items.length) return '';
+    return `<div class="sec-title">${esc(title)} <span class="tag">${items.length}</span></div>${help ? `<p class="help" style="margin:0 0 10px">${esc(help)}</p>` : ''}
+      <div class="theme-grid" role="radiogroup" aria-label="${esc(title)}">${(g === 'base' && f === 'all' ? card('auto', 'Как в системе', 'авто', 'День или Графит — по настройке ОС') : '') + items.map(t => card(t.id, t.label, t.mode, t.hint)).join('')}</div>`;
+  }).join('');
   return `<h2 class="pane-title">Оформление</h2>
-    <p class="pane-lead">Тема применяется сразу и запоминается. Все темы проверены на контраст текста (WCAG AA); для плохого зрения или бликов есть «Контраст».</p>
-    <div class="theme-grid" role="radiogroup" aria-label="Тема">
-      ${card('auto', 'Как в системе', 'авто', 'День или Графит — по настройке ОС')}
-      ${THEMES.filter(t => !t.soft).map(t => card(t.id, t.label, t.mode, t.hint)).join('')}
+    <p class="pane-lead">Тема применяется сразу и запоминается. Всего тем: ${THEMES.length}. Все проверены на контраст текста (WCAG AA); для плохого зрения или бликов есть «Контраст».</p>
+    <div class="seg" role="group" aria-label="Показать темы">
+      ${[['all', 'Все'], ['dark', 'Тёмные'], ['light', 'Светлые']].map(([v, l]) => `<button type="button" data-theme-filter="${v}" aria-pressed="${f === v}">${l}</button>`).join('')}
     </div>
-    <div class="sec-title">Мягкие, для долгой работы</div>
-    <p class="help" style="margin:0 0 10px">Приглушённый контраст, без чисто белого и чёрного, тёплые тона — меньше нагрузка на глаза.</p>
-    <div class="theme-grid" role="radiogroup" aria-label="Мягкие темы">
-      ${THEMES.filter(t => t.soft).map(t => card(t.id, t.label, t.mode, t.hint)).join('')}
-    </div>
+    ${sections}
     <div class="sec-title">Плотность</div>
     <div class="seg" role="group" aria-label="Плотность">
       <button type="button" data-set-density="comfortable" aria-pressed="${themeState.density === 'comfortable'}">Обычная</button>
@@ -471,6 +478,7 @@ async function settingsClick(e) {
   if (q('#sTest')) return testLogin();
 
   // оформление
+  if ((el = q('[data-theme-filter]'))) { S.themeFilter = el.dataset.themeFilter; return renderSettings(); }
   if ((el = q('[data-theme-pick]'))) { setTheme(el.dataset.themePick); return renderSettings(); }
   if ((el = q('[data-set-density]'))) { setDensity(el.dataset.setDensity); return renderSettings(); }
 

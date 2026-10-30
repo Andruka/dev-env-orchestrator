@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
+    "themes": "node scripts/gen-themes.js && node scripts/check-contrast.js",
     "build:installer": "bash scripts/build-installer.sh"
   }
 }

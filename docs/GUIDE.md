@@ -207,6 +207,10 @@ dev-panel desktop      # значок в меню приложений
 Последние семь («Мягкие, для долгой работы») — с приглушённым контрастом и без чисто белого и чёрного, чтобы меньше уставали глаза.
 | **Как в системе** | «День» или «Графит» — по настройке ОС |
 
+**Ещё 45 тем** в разделах «Классика редакторов» (Catppuccin ×4, Tokyo Night/Day, Gruvbox, Dracula, Solarized, One Dark, Everforest, Kanagawa, Rosé Pine, Flexoki), «Современные и яркие» (Monokai Pro, Synthwave, Oxocarbon, Poimandres, Vesper) и «Модные оттенки» (Cloud Dancer — по мотивам цвета года Pantone 2026, Mocha Mousse — Pantone 2025, Терракота, Лавандовая дымка, Северное сияние, Закат) и «Для прикола» (Матрица, Янтарный монитор, DOS, Game Boy, Барби, Киберпанк, Вейпорвейв, Синька, Хэллоуин, Новый год, Кофе с молоком, Нуар, Ультрафиолет, Радиоактивный). В выборе есть фильтр «Все / Тёмные / Светлые».
+
+Эти темы — переработанные вариации открытых палитр (оттенки подогнаны под AA, поэтому не совпадают с оригиналом побуквенно): Catppuccin, Tokyo Night (folke), Gruvbox (morhetz), Everforest (sainnhe), Kanagawa (rebelot), Flexoki (Стивен Анго), Rosé Pine, Solarized, Dracula, One Dark, Monokai Pro, Oxocarbon, Poimandres, Vesper. Они генерируются: опорные цвета лежат в `scripts/gen-themes.js`, команда `npm run themes` пересоздаёт `public/themes-extra.css` и `themes-extra.js` и сразу проверяет контраст. Чтобы добавить тему, допишите строку в список и запустите её.
+
 Все темы проверяются скриптом `node scripts/check-contrast.js` на контраст WCAG AA (текст ≥ 4,5:1, рамки и фокус ≥ 3:1). **Плотность**: обычная или компактная (больше проектов на экране). Шрифты (Inter, JetBrains Mono) лежат рядом с панелью — интерфейс не зависит от интернета.
 
 ---
