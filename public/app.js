@@ -55,6 +55,7 @@ function renderEnv() {
   if (hasCompose) {
     items.push(`<div class="env-item off"><span class="dot ${state.status.ports.db ? 'alive' : ''}"></span><span class="k">PostgreSQL</span><span class="v mono">:${state.config.vars.dbPort || 5432}</span></div>`);
   }
+  items.push(standChip());
   if (hasNode) items.push(authChip());
   const job = state.jobs.find(j => j.status === 'running');
   if (job) {
@@ -66,6 +67,21 @@ function renderEnv() {
 
   const pst = job?.steps.find(s => s.status === 'running');
   document.title = job ? `◌ ${pst?.progress != null ? pst.progress + '% · ' : ''}${job.title} — Dev Panel` : 'Dev Panel';
+}
+
+// Стенд фронтенда и входа, а при расхождении с локальным бэкенд-процессом — предупреждение (иначе запросы получат 401)
+function standChip() {
+  const sc = state.status.stand;
+  if (!sc?.front) return '';
+  const front = sc.frontTitle || sc.front;
+  const bad = (sc.mismatch || [])[0];
+  if (bad) {
+    const back = bad.standTitle || bad.stand;
+    return `<div class="env-item off" role="status" title="${esc(`Фронтенд и вход панели идут на стенд ${front}, а бэкенд на :${bad.port} (процесс ${bad.process}) запущен с окружением ${back}. Токен стенда ${front} бэкенд не примет (401). Перезапустите бэкенд с окружением ${front}: переменные — кнопка «Для IDE» у стенда; или переключите стенд на ${back}.`)}">
+      <span class="dot warn"></span><span class="k">Стенд</span><span class="v">фронт и вход: ${esc(front)}</span><span class="v warn">бэкенд :${bad.port}: ${esc(back)}</span></div>`;
+  }
+  const be = (sc.backends || []).find(b => b.stand);
+  return `<div class="env-item off" title="${esc(`Фронтенд и вход панели подключены к стенду ${front}${be ? `; бэкенд на :${be.port} работает с тем же окружением` : ''}`)}"><span class="dot ${be ? 'alive' : ''}"></span><span class="k">Стенд</span><span class="v">${esc(front)}</span></div>`;
 }
 
 const authText = () => ({
@@ -187,7 +203,8 @@ function renderDetail(p, st) {
       <div class="section-actions">${s.actions.filter(a => a !== p.groupObj.primary).map(a => actionButton(a, p)).join('')}</div>
     </div>`).join('');
   const snaps = p.groupObj.kind === 'compose' && state.config.actions.snapSave ? renderSnapshots(p) : '';
-  return `<div class="repo-detail"><div class="meta-line">${meta.join('')}</div>${changes}${ctrs}${sections}${snaps}</div>`;
+  const stands = renderStands(p, st);
+  return `<div class="repo-detail"><div class="meta-line">${meta.join('')}</div>${changes}${ctrs}${stands}${sections}${snaps}</div>`;
 }
 
 const SNAP_KIND = {

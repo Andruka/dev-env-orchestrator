@@ -53,10 +53,10 @@ button .ic { width: 1.1em; height: 1.1em; }
 button.sm { padding: 3px 9px; font-size: var(--fs-s); border-radius: var(--r-s); }
 
 /* ---------- верхняя панель ---------- */
-.topbar { display: flex; align-items: center; gap: 16px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--surface); flex: none; }
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--surface); flex: none; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: var(--fs-l); letter-spacing: -.01em; }
 .brand-mark { width: 26px; height: 26px; flex: none; }
-.env { flex: 1; display: flex; gap: 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.env { flex: 1; display: flex; flex-wrap: wrap; gap: 6px 8px; min-width: 0; padding: 2px; }
 .env-item { display: flex; align-items: center; gap: 8px; padding: 3px 6px 3px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--bg); font-size: var(--fs-s); white-space: nowrap; }
 .env-item .k { color: var(--faint); }
 .env-item .v { color: var(--text); }
@@ -127,7 +127,7 @@ button.ghost.danger-ghost:hover:not(:disabled) { color: var(--danger); border-co
 .snap-empty { color: var(--faint); font-size: var(--fs-s); padding: 6px 8px; }
 .snap-total { color: var(--faint); font-size: var(--fs-s); padding: 4px 8px 2px; }
 .changes { margin: 0 0 10px; font-size: var(--fs-s); }
-.changes summary { color: var(--warn); cursor: pointer; list-style: none; border-radius: 4px; }
+.changes summary { color: var(--warn); cursor: pointer; list-style: none; border-radius: 4px; min-height: 24px; display: flex; align-items: center; }
 .changes summary::-webkit-details-marker { display: none; }
 .changes summary::before { content: '▸ '; }
 .changes[open] summary::before { content: '▾ '; }
@@ -370,3 +370,39 @@ input[type="checkbox"], input[type="radio"] { width: auto; accent-color: var(--a
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
   .spin { animation: none; }
 }
+
+/* стенды: подмена .env / config.js */
+.swaps { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: var(--r); padding: 8px; background: var(--bg); }
+.stand-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: var(--fs-s); border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); }
+.chip svg { width: 13px; height: 13px; }
+.chip.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--raised)); }
+.swap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "l" "s" "t"; gap: 4px; }
+.swap-label { grid-area: l; font-size: var(--fs-s); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swap-select { grid-area: s; width: 100%; font-family: var(--mono); font-size: var(--fs-s); padding: 5px 9px; }
+.swap-tools { grid-area: t; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.swap-tools .sm { padding: 3px 8px; font-size: var(--fs-s); }
+.card.inset { background: var(--bg); margin-top: 12px; }
+
+.pane-sub { margin: 28px 0 6px; font-size: 15px; font-weight: 600; }
+.stand-cred { margin-bottom: 12px; }
+button.ghost.warn { color: var(--warn); }
+
+.stand-slot .field { margin-bottom: 10px; }
+.adv { margin-top: 18px; }
+.adv > summary { cursor: pointer; color: var(--dim); padding: 6px 0; }
+
+.env-item .v.warn { color: var(--warn); font-weight: 600; }
+
+@media (max-width: 1100px) {
+  .brand { order: 1; }
+  .top-actions { order: 2; margin-left: auto; }
+  .env { order: 3; flex-basis: 100%; }
+}
+.row2.even { grid-template-columns: 1fr 1fr; }
+.field-err { display: block; margin-top: 4px; color: var(--danger); font-size: var(--fs-s); }
+[aria-invalid="true"] { border-color: var(--danger) !important; }
+details.sec { margin: 10px 0; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--surface); }
+details.sec > summary { cursor: pointer; padding: 8px 12px; font-weight: 600; list-style-position: inside; }
+details.sec > summary .help { font-weight: 400; margin-left: 8px; }
+details.sec > .sec-body { padding: 2px 12px 10px; }

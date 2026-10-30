@@ -17,10 +17,22 @@ const admin = require('./lib/admin');
 const userConfig = require('./lib/userConfig');
 const fsBrowse = require('./lib/fsBrowse');
 const doctor = require('./lib/doctor');
+const envswap = require('./lib/envswap');
+const stands = require('./lib/stands');
 const pkg = require('./package.json');
 
 let config = load();
 snapshots.configure(config.vars);
+// Логин ходит на тот стенд, к которому сейчас подключён фронтенд (если не отключено в «Окружение»)
+// Настройки с учётом активного стенда: у стенда может быть своя стартовая страница фронтенда (id объекта зависит от базы)
+function effectiveVars() {
+  const base = config.vars.authFollowsEnv === false ? null : envswap.authBase(config, services.get('frontend')?.project);
+  let origin = null;
+  try { origin = base && new URL(base.url).origin; } catch { /* адрес не разобрать — стенд не определён */ }
+  const stand = origin && (config.envs || []).find(e => e.origin === origin && e.startUrl);
+  return stand ? { ...config.vars, frontendUrl: stand.startUrl } : config.vars;
+}
+auth.setBaseResolver(() => (config.vars.authFollowsEnv === false ? null : envswap.authBase(config, services.get('frontend')?.project)));
 
 const PUBLIC = path.join(__dirname, 'public');
 const MIME = {
@@ -48,6 +60,8 @@ function publicConfig() {
     version: pkg.version,
     configured: config.configured,
     prefs: config.prefs,
+    swaps: config.swaps.filter(sw => sw.enabled).map(({ id, group, title, target, kind }) => ({ id, group, title, target, kind })),
+    envs: config.envs,
     vars: Object.fromEntries(CLIENT_VARS.map(k => [k, config.vars[k]])),
     groups: config.groups.map(({ discover, paths, addPaths, exclude, raw, hidden, extra, ...g }) => ({
       ...g, sections: g.sections.length ? g.sections : [], primary: g.primary || null,
@@ -78,6 +92,13 @@ function adminModel() {
     defaultActions: defaults.actions,
     stepTypes: Object.keys(require('./lib/steps')),
     prefs: config.prefs,
+    swaps: config.swaps,
+    defaultSwaps: defaults.swaps || [],
+    envs: config.envs,
+    standCreds: secrets.publicView().stands,
+    // какие файлы можно выбрать в слоте: объединение вариантов по всем репозиториям группы
+    swapFiles: Object.fromEntries(config.swaps.map(sw => [sw.id, [...new Set(
+      (config.groups.find(g => g.id === sw.group)?.projects || []).flatMap(p => envswap.variants(p, sw).map(v => v.rel)))]])),
   };
 }
 
@@ -85,7 +106,7 @@ async function paramOptions(projectId, actionId, paramName) {
   const project = findProject(projectId);
   const param = (config.actions[actionId]?.params || []).find(p => p.name === paramName);
   if (!param) throw httpError(404, 'Параметр не найден');
-  const p = render(param, { ...config.vars, project });
+  const p = render(param, { ...effectiveVars(), project });
   switch (p.type) {
     case 'gitBranch': return (await status.branches(project.path)).map(b => ({ value: b, label: b }));
     case 'file': return status.files(p.dir, p.ext).map(f => ({
@@ -106,6 +127,7 @@ function reload() {
   config = load();
   snapshots.configure(config.vars);
   authKeeper.start(config.vars);
+  authKeeper.setStartUrlResolver(() => effectiveVars().frontendUrl);
   bus.emit('config', {});
 }
 
@@ -134,6 +156,54 @@ const routes = {
   'POST /api/actions/reset': mutate(b => admin.resetAction(b.id)),
   'POST /api/actions/hide': mutate(b => admin.setHidden(b.group, b.action, b.hidden !== false)),
   'POST /api/actions/place': mutate(b => admin.place(b.group, b.section, b.action)),
+  'POST /api/swaps/save': mutate(b => admin.saveSwap(b, config)),
+  'POST /api/swaps/reset': mutate(b => admin.resetSwap(b.id)),
+  'POST /api/envs/save': mutate(b => admin.saveEnv(b)),
+  'POST /api/envs/delete': mutate(b => admin.deleteEnv(b.id)),
+  'GET /api/stands/ide': (q) => {
+    const e = config.envs.find(x => x.id === q.id);
+    if (!e) throw httpError(404, 'Стенд не найден');
+    const vars = envswap.readStandIde(e.id);
+    return { text: Object.entries(vars).map(([k, v]) => `${k}=${v.includes('\n') ? `"${v}"` : v}`).join('\n') };
+  },
+  'POST /api/stands/save': mutate(b => { const r = stands.save(config, b); setTimeout(() => authKeeper.tick(), 0); return r; }),
+  'POST /api/stands/delete': mutate(b => { stands.remove(config, b.id); setTimeout(() => authKeeper.tick(), 0); return {}; }),
+  'POST /api/env/apply': (q, body) => {
+    const project = findProject(body.project);
+    const slot = envswap.findSlot(config, project, body.slot);
+    const r = envswap.apply(project, slot, body.variant, config);
+    bus.emit('config', {});
+    return { ...r, project: project.name, state: envswap.slotState(project, slot) };
+  },
+  'POST /api/env/preset': (q, body) => {
+    const preset = config.envs.find(e => e.id === body.id);
+    if (!preset) throw httpError(404, 'Окружение не найдено');
+    const results = envswap.applyPreset(config, preset, body.projects || {});
+    bus.emit('config', {});
+    return { ok: true, title: preset.title, results };
+  },
+  'POST /api/env/exclude': (q, body) => {
+    const project = findProject(body.project);
+    const slot = envswap.findSlot(config, project, body.slot);
+    const open = envswap.variants(project, slot).map(v => v.rel).filter(r => body.files?.includes(r));
+    if (!open.length) throw httpError(400, 'Нет таких файлов-вариантов');
+    return envswap.excludeFromGit(project, open);
+  },
+  'POST /api/env/save-as': (q, body) => {
+    const project = findProject(body.project);
+    const slot = envswap.findSlot(config, project, body.slot);
+    const file = envswap.saveAs(project, slot, body.name);
+    bus.emit('config', {});
+    return { ok: true, file };
+  },
+  'GET /api/env/ide': (q) => {
+    const project = findProject(q.project);
+    const slot = envswap.findSlot(config, project, q.slot);
+    const extra = envswap.standIdeFor(config, slot.id, envswap.slotState(project, slot).active);
+    const out = envswap.ideExport(project, slot, extra);
+    envswap.writeIdeFile(project, slot, extra);
+    return out;
+  },
   'POST /api/vars': mutate(b => admin.setVars(b.vars)),
   'POST /api/prefs': mutate(b => admin.setPrefs(b.prefs)),
   'GET /api/backup': () => admin.exportConfig(),
@@ -147,11 +217,17 @@ const routes = {
     const { cancelHandlers, flags, ...rest } = j;
     return rest;
   },
-  'POST /api/run': (q, body) => runner.start(config, {
+  'POST /api/run': (q, body) => runner.start({ ...config, vars: effectiveVars() }, {
     actionId: body.action, project: findProject(body.project), params: body.params || {},
   }),
   'POST /api/cancel': (q) => ({ ok: runner.cancel(q.id) }),
-  'GET /api/settings': () => secrets.publicView(),
+  'GET /api/settings': () => {
+    const view = secrets.publicView();
+    const eff = auth.effective(secrets.read().auth);
+    return { ...view, effective: eff.base ? { origin: eff.base.origin, project: eff.base.project, loginUrl: eff.auth.loginUrl, ownCreds: eff.base.ownCreds, login: eff.auth.login } : null };
+  },
+  'POST /api/settings/stand': (q, body) => { const r = secrets.updateStand(body); authKeeper.tick(); return r; },
+  'POST /api/settings/stand/delete': (q, body) => { const r = secrets.deleteStand(body.origin); authKeeper.tick(); return r; },
   'POST /api/settings': (q, body) => { const r = secrets.updateAuth(body.auth || {}); authKeeper.tick(); return r; },
   'POST /api/settings/test': async () => {
     const lines = [];
@@ -225,6 +301,7 @@ services.adopt();
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`Dev Panel: http://localhost:${config.port}`);
   authKeeper.start(config.vars);
+  authKeeper.setStartUrlResolver(() => effectiveVars().frontendUrl);
 });
 
 // Сервисы (dup, npm start) не останавливаются вместе с панелью — следующий запуск их подхватит

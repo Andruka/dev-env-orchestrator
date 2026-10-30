@@ -12,6 +12,7 @@
     "browserCmd": "",
     "browserProfile": "{home}/.config/brave-dev-cors",
     "debugPort": 9222,
+    "authFollowsEnv": true,
     "migrationsDir": "src/AusPlan/Database/Migration",
     "snapshotsEnabled": true,
     "snapshotsDir": "{dataHome}/dev-panel/snapshots",
@@ -19,6 +20,25 @@
     "snapshotsKeepDump": 2,
     "dc": "docker compose -f {composeFile}"
   },
+  "swaps": [
+    {
+      "id": "backendEnv",
+      "group": "backend",
+      "title": "Переменные бэкенда (.env)",
+      "target": ".env",
+      "patterns": [".env_*"],
+      "kind": "env",
+      "ideOverrides": {}
+    },
+    {
+      "id": "frontendConfig",
+      "group": "frontend",
+      "title": "Конфиг фронтенда (public/config.js)",
+      "target": "public/config.js",
+      "patterns": ["public/config*.js"],
+      "kind": "js"
+    }
+  ],
   "groups": [
     {
       "id": "backend",
@@ -130,7 +150,7 @@
       "hint": "fetch → checkout → pull --ff-only. Незакоммиченные изменения не трогаются"
     },
     "down": {
-      "title": "ddown",
+      "title": "Остановить (ddown)",
       "hint": "Остановить контейнеры (все контейнеры docker; БД — штатно, остальное — за 2 с)",
       "icon": "square",
       "steps": [
@@ -157,7 +177,7 @@
       ]
     },
     "dbRm": {
-      "title": "dbRm",
+      "title": "Удалить БД (dbRm)",
       "hint": "Удалить данные БД (pgdata)",
       "icon": "trash-2",
       "confirm": "Удалить {dbDataDir}/pgdata?",
@@ -171,7 +191,7 @@
       "danger": true
     },
     "up": {
-      "title": "dup",
+      "title": "Поднять (dup)",
       "hint": "Поднять контейнеры и дождаться миграций (dup)",
       "icon": "play",
       "steps": [

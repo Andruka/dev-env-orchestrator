@@ -55,7 +55,13 @@ function morphNode(a, b) {
     return;
   }
   // значение полей ввода не трогаем — пользователь может печатать
-  if (a.nodeName === 'INPUT' || a.nodeName === 'TEXTAREA' || a.nodeName === 'SELECT') return;
+  if (a.nodeName === 'INPUT' || a.nodeName === 'TEXTAREA') return;
+  if (a.nodeName === 'SELECT') {
+    // пока список открыт, не трогаем; иначе подтягиваем новые варианты и выбранное значение
+    if (a === document.activeElement) return;
+    if (a.innerHTML !== b.innerHTML || a.disabled !== b.disabled) a.replaceWith(b);
+    return;
+  }
   for (const { name } of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
   for (const { name, value } of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
   morphChildren(a, b);

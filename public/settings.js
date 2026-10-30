@@ -5,6 +5,7 @@ const S = { tab: 'repos', model: null, group: null, doctor: null, doctorBusy: fa
 const TABS = [
   ['repos', 'folder-open', 'Репозитории'],
   ['buttons', 'layers', 'Кнопки'],
+  ['stands', 'server', 'Стенды'],
   ['env', 'sliders-horizontal', 'Окружение'],
   ['login', 'key-round', 'Вход'],
   ['look', 'palette', 'Оформление'],
@@ -25,10 +26,24 @@ async function openSettings(tab) {
     dlg.showModal();
     dlg.onclick = settingsClick;
     dlg.onchange = settingsChange;
-    dlg.onkeydown = e => { if (e.key === 'Escape' && !document.querySelector('dialog#editor[open], dialog#picker[open], dialog#dialog[open]')) dlg.close(); };
+    dlg.onkeydown = e => { if (e.key === 'Escape' && !document.querySelector('dialog#editor[open], dialog#picker[open], dialog#dialog[open]')) { e.preventDefault(); closeSettings(); } };
+    dlg.oncancel = e => { e.preventDefault(); if (!document.querySelector('dialog#editor[open], dialog#picker[open], dialog#dialog[open]')) closeSettings(); };
+    dlg.onclose = () => { S.stand = null; S.newSwap = false; };
   }
   await settingsRefresh();
   if (S.tab === 'doctor' && !S.doctor) runDoctor();
+}
+
+// Закрыть настройки; если в форме стенда есть несохранённое, спросить
+async function closeSettings() {
+  const dlg = $('#settings');
+  if (window.standDirty?.()) {
+    // фокус на «Отмена»: случайный Enter не должен стирать введённое
+    const leave = await openDialog({ title: 'Стенд не сохранён', html: '<p>Введённое в форме стенда пропадёт. Закрыть настройки без сохранения?</p>', okLabel: 'Закрыть без сохранения', danger: true, getValue: () => true,
+      onOpen: () => document.querySelector('#dialogForm button[value=cancel]').focus() });
+    if (!leave) return;
+  }
+  dlg.close();
 }
 
 async function settingsRefresh() {
@@ -167,11 +182,12 @@ const VAR_FIELDS = [
     ['dbPort', 'Порт PostgreSQL', 'number', 'Только для индикатора сверху'],
   ]],
   ['Фронтенд и браузер', [
-    ['frontendUrl', 'Адрес страницы фронтенда', 'text', 'Открывается кнопкой «Браузер»'],
+    ['frontendUrl', 'Адрес страницы фронтенда', 'text', 'Открывается кнопкой «Браузер». Общий для всех стендов; у стенда может быть свой (в id объекта в адресе зашита база)'],
     ['frontendPort', 'Порт фронтенда', 'number', 'Только для индикатора сверху'],
     ['browserCmd', 'Команда браузера', 'text', 'Пусто — выбрать автоматически (Brave, Chrome, Chromium)'],
     ['browserProfile', 'Профиль браузера', 'dir', 'Отдельный профиль для разработки'],
     ['debugPort', 'Порт отладки браузера', 'number', 'Через него панель входит во фронтенд'],
+    ['authFollowsEnv', 'Вход следует за стендом', 'bool', 'Логин идёт на хост и порт из BACKEND_URL активного public/config.js (см. «Стенды»); путь и учётка — из раздела «Вход»'],
   ]],
   ['Снимки БД', [
     ['snapshotsEnabled', 'Создавать снимки БД', 'bool', 'Выключите, если не нужны или не хватает места: уже сохранённые снимки останутся и восстанавливаются'],
@@ -205,29 +221,55 @@ function envPane() {
 
 function loginPane() {
   return `<h2 class="pane-title">Вход во фронтенд</h2>
-    <p class="pane-lead">Кнопка «Войти» получает токен по API и записывает его в localStorage браузера; панель же продлевает токен, пока вы работаете. Пароль хранится только у вас, в файле с правами 600.</p>
+    <p class="pane-lead">Кнопки «Войти» и «Запустить и войти» получают токен по API и записывают его в localStorage браузера; панель же продлевает токен, пока вы работаете. Пароль хранится только у вас, в файле с правами 600.</p>
     <div id="loginForm"><div class="note">Загрузка…</div></div>`;
 }
 
 async function loadLogin() {
-  let s;
-  try { s = (await api('/api/settings')).auth; } catch (e) { return toast(e.message, 'err'); }
+  let s, eff, stands;
+  try { const r = await api('/api/settings'); s = r.auth; eff = r.effective; stands = r.stands || []; } catch (e) { return toast(e.message, 'err'); }
   const box = $('#loginForm');
   if (!box) return;
-  box.innerHTML = `<form id="loginFormEl"><div class="row2">
+  const hasGeneral = Boolean(s.login && s.hasPassword);
+  const note = eff ? `<div class="note ${eff.ownCreds || hasGeneral ? 'ok' : 'warn'}" style="margin-bottom:12px">Сейчас вход идёт на стенд из config.js проекта ${esc(eff.project)}: <span class="mono">${esc(eff.loginUrl)}</span>. ${
+    eff.ownCreds ? `Используются учётные данные этого стенда (логин ${esc(eff.login)}).`
+      : hasGeneral ? 'Своих учётных данных у стенда нет — используются общие.'
+        : '<strong>Своих учётных данных у стенда нет, а общие не заданы: вход не сработает.</strong> Добавьте логин и пароль этого стенда ниже.'}</div>` : '';
+
+  const general = `<h3 class="pane-sub">Общие данные <span class="help">для стендов без своих</span></h3>
+    <form id="loginFormEl"><div class="row2">
       <div class="field"><label for="sLogin">Логин</label><input id="sLogin" value="${esc(s.login)}" autocomplete="off"></div>
       <div class="field"><label for="sClient">clientId</label><input id="sClient" value="${esc(s.clientId)}" inputmode="numeric"></div>
     </div>
     <div class="field"><label for="sPass">Пароль</label><input id="sPass" type="password" placeholder="${s.hasPassword ? '•••••••• сохранён — оставьте пустым, чтобы не менять' : 'не задан'}" autocomplete="new-password"></div>
     <label class="check"><input type="checkbox" id="sKeep" ${s.keepAlive !== false ? 'checked' : ''}>
       <span>Поддерживать вход автоматически<br><span class="help">Панель продлевает токен в браузере за 15 минут до истечения и входит заново, если сессия слетела</span></span></label>
-    <div class="field"><label for="sLoginUrl">URL получения токена</label><input id="sLoginUrl" class="mono" value="${esc(s.loginUrl)}"></div>
-    <div class="field"><label for="sUsersUrl">URL данных пользователя</label><input id="sUsersUrl" class="mono" value="${esc(s.usersUrl)}">
-      <span class="help">{userId} подставляется из ответа логина. Оставьте пустым, чтобы не запрашивать.</span></div>
-    <div class="field"><label for="sRefreshUrl">URL обновления токена</label><input id="sRefreshUrl" class="mono" value="${esc(s.refreshUrl || '')}" placeholder="по умолчанию: URL токена с /refresh-token">
-      <span class="help">Нужен только если адрес обновления отличается от обычного.</span></div>
+    <details class="sec"><summary>Адреса API <span class="help">обычно менять не нужно</span></summary><div class="sec-body">
+      <div class="field"><label for="sLoginUrl">URL получения токена</label><input id="sLoginUrl" class="mono" value="${esc(s.loginUrl)}"></div>
+      <div class="field"><label for="sUsersUrl">URL данных пользователя</label><input id="sUsersUrl" class="mono" value="${esc(s.usersUrl)}">
+        <span class="help">{userId} подставляется из ответа логина. Оставьте пустым, чтобы не запрашивать.</span></div>
+      <div class="field"><label for="sRefreshUrl">URL обновления токена</label><input id="sRefreshUrl" class="mono" value="${esc(s.refreshUrl || '')}" placeholder="по умолчанию: URL токена с /refresh-token">
+        <span class="help">Нужен только если адрес обновления отличается от обычного.</span></div></div></details>
     <div class="modal-actions"><span id="sResult" class="note" style="display:none;margin-right:auto"></span>
       <button type="button" id="sTest">Проверить вход</button><button type="submit" class="primary" id="sSave">Сохранить</button></div></form>`;
+
+  const perStand = `<h3 class="pane-sub">Учётные данные по стендам</h3>
+    <p class="pane-lead">На разных стендах (5005, 5006, 5008…) пользователи разные: панель берёт подходящие по адресу бэкенда из активного config.js. Те же данные можно задать и в форме стенда («Настройки → Стенды»).</p>
+    ${stands.map(st => `<form class="card inset stand-cred" data-stand-form="${esc(st.origin)}">
+      <div class="row2 even"><div class="field"><label>Стенд</label><div class="mono">${esc(st.origin)}${eff && eff.origin === st.origin ? ' <span class="badge alive">активен</span>' : ''}</div></div>
+      <div class="field"><label>Логин</label><input name="login" value="${esc(st.login)}" autocomplete="off"></div></div>
+      <div class="row2 even"><div class="field"><label>Пароль</label><input name="password" type="password" autocomplete="new-password" placeholder="${st.hasPassword ? '•••••••• сохранён' : 'не задан'}"></div>
+      <div class="field"><label>clientId</label><input name="clientId" value="${esc(st.clientId)}" inputmode="numeric" placeholder="как в общих"></div></div>
+      <div class="modal-actions"><button type="button" class="ghost danger-ghost" data-cred-del="${esc(st.origin)}">Удалить</button><button type="submit" class="primary">Сохранить</button></div></form>`).join('')}
+    <form class="card inset stand-cred" data-stand-form="">
+      <div class="row2 even"><div class="field"><label>Новый стенд (адрес бэкенда)</label><input name="origin" class="mono" value="${esc(eff && !stands.some(x => x.origin === eff.origin) ? eff.origin : '')}" placeholder="https://10.145.1.150:5008" autocomplete="off"></div>
+      <div class="field"><label>Логин</label><input name="login" autocomplete="off"></div></div>
+      <div class="row2 even"><div class="field"><label>Пароль</label><input name="password" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>clientId</label><input name="clientId" inputmode="numeric" placeholder="как в общих"></div></div>
+      <div class="modal-actions"><button type="submit" class="primary">Добавить</button></div></form>`;
+
+  // со стендами главное — их данные, без них — общая форма
+  box.innerHTML = note + (stands.length || eff ? perStand + general : general + perStand);
 }
 
 const readLogin = () => ({
@@ -335,7 +377,7 @@ function helpPane() {
     </div>`;
 }
 
-const PANES = { repos: reposPane, buttons: buttonsPane, env: envPane, login: loginPane, look: lookPane, doctor: doctorPane, help: helpPane };
+const PANES = { repos: reposPane, buttons: buttonsPane, stands: standsPane, env: envPane, login: loginPane, look: lookPane, doctor: doctorPane, help: helpPane };
 
 /* ---------- обработчики ---------- */
 
@@ -345,8 +387,8 @@ async function settingsClick(e) {
   // closest() не должен выходить за пределы окна: у <html> есть data-theme и data-density, и клик в любое поле ловился как выбор плотности
   const q = sel => { const r = t.closest(sel); return r && root.contains(r) ? r : null; };
   let el;
-  if (q('#setClose')) return $('#settings').close();
-  if ((el = q('[data-stab]'))) { S.tab = el.dataset.stab; renderSettings(); if (S.tab === 'doctor' && !S.doctor) runDoctor(); return; }
+  if (q('#setClose')) return closeSettings();
+  if ((el = q('[data-stab]'))) { window.standDirty?.(); S.tab = el.dataset.stab; renderSettings(); if (S.tab === 'doctor' && !S.doctor) runDoctor(); return; }
 
   // репозитории
   if ((el = q('[data-add-repo]'))) {
@@ -388,6 +430,11 @@ async function settingsClick(e) {
   if ((el = q('[data-sgroup]'))) { S.group = el.dataset.sgroup; return renderSettings(); }
   if (q('[data-new-action]')) return editAction({ group: S.group });
   if ((el = q('[data-edit-action]'))) return editAction({ id: el.dataset.editAction, group: S.group });
+  if ((el = q('[data-cred-del]'))) {
+    if (!(await confirmDialog('Удалить учётные данные стенда', `Логин и пароль для ${el.dataset.credDel} будут удалены из файла секретов.`, true, 'Удалить'))) return;
+    try { await api('/api/settings/stand/delete', { origin: el.dataset.credDel }); toast('Удалено', 'ok'); await loadLogin(); } catch (err) { toast(err.message, 'err'); }
+    return;
+  }
   if ((el = q('[data-hide]'))) return change('/api/actions/hide', { group: el.dataset.groupId, action: el.dataset.hide, hidden: el.dataset.hidden === '1' });
   if ((el = q('[data-primary]'))) {
     const g = S.model.groups.find(x => x.id === el.dataset.groupId);
@@ -402,6 +449,9 @@ async function settingsClick(e) {
     return change('/api/actions/delete', { id: el.dataset.delAction });
   }
   if (q('[data-add-existing]')) return addExisting();
+
+  // стенды
+  { const r = standsClick(q); if (r) return r; }
 
   // окружение
   if (q('[data-env-reset]')) {
@@ -433,9 +483,19 @@ async function settingsClick(e) {
 
 async function settingsChange(e) {
   if (e.target.id === 'importFile') return importBackup(e.target.files[0]);
+  standsChange(e);
 }
 
 document.addEventListener('submit', async e => {
+  if (e.target.matches('[data-stand-form]')) {
+    e.preventDefault();
+    const f = e.target, v = n => f.elements[n]?.value ?? '';
+    try {
+      await api('/api/settings/stand', { origin: f.dataset.standForm || v('origin'), login: v('login'), password: v('password'), clientId: v('clientId') });
+      toast('Сохранено', 'ok'); await loadLogin();
+    } catch (err) { toast(err.message, 'err'); }
+    return;
+  }
   if (e.target.id === 'loginFormEl') {
     e.preventDefault();
     try { await api('/api/settings', { auth: readLogin() }); toast('Сохранено', 'ok'); await loadLogin(); } catch (err) { toast(err.message, 'err'); }
