@@ -8,7 +8,7 @@ const TABS = [
   ['stands', 'server', 'Стенды'],
   ['env', 'sliders-horizontal', 'Пути и порты'],
   ['look', 'palette', 'Оформление'],
-  ['doctor', 'stethoscope', 'Проверка'],
+  ['doctor', 'stethoscope', 'Обслуживание'],
   ['help', 'book-open', 'Справка'],
 ];
 
@@ -32,7 +32,7 @@ async function openSettings(tab) {
     dlg.onclose = () => { S.stand = null; S.newSwap = false; };
   }
   await settingsRefresh();
-  if (S.tab === 'doctor' && !S.doctor) runDoctor();
+  openMaintData();
 }
 
 // Закрыть настройки; если в форме стенда есть несохранённое, спросить
@@ -45,6 +45,13 @@ async function closeSettings() {
     if (!leave) return;
   }
   dlg.close();
+}
+
+// При входе в «Обслуживание» подгружаем данные выбранного раздела
+function openMaintData() {
+  if (S.tab !== 'doctor') return;
+  const sub = S.maintSub || 'check';
+  if (sub === 'check') { if (!S.doctor) runDoctor(); } else loadMaint(sub);
 }
 
 async function settingsRefresh() {
@@ -176,6 +183,12 @@ const VAR_FIELDS = [
     ['dumpsDir', 'Папка с дампами', 'dir', 'Файлы *.sql для «Накатить дамп»'],
     ['dbDataDir', 'Папка данных БД', 'dir', 'Здесь docker compose хранит pgdata'],
     ['migrationsDir', 'Миграции (внутри репозитория)', 'text', 'По ним подбирается снимок БД для ветки'],
+  ]],
+  ['Swagger', [
+    ['swaggerDir', 'Папка репозитория swagger', 'dir', 'Путь у каждого свой; по умолчанию — «swagger» внутри корневой папки CalPlan'],
+    ['swaggerUiPort', 'Порт Swagger UI', 'number', 'Должен совпадать с docker-compose.yml репозитория swagger (по умолчанию 9105)'],
+    ['swaggerEditorPort', 'Порт редактора', 'number', 'По умолчанию 9104'],
+    ['swaggerMockPort', 'Порт mock-сервера', 'number', 'По умолчанию 4010'],
   ]],
   ['Бэкенд', [
     ['composeFile', 'Файл compose', 'text', 'Имя файла в корне репозитория бэкенда'],
@@ -440,7 +453,7 @@ function standsTab() {
     ${sub === 'login' ? loginPane() : standsPane()}`;
 }
 
-const PANES = { repos: reposPane, buttons: buttonsPane, stands: standsTab, env: envPane, look: lookPane, doctor: doctorPane, help: helpPane };
+const PANES = { repos: reposPane, buttons: buttonsPane, stands: standsTab, env: envPane, look: lookPane, doctor: maintPane, help: helpPane };
 
 /* ---------- обработчики ---------- */
 
@@ -452,7 +465,7 @@ async function settingsClick(e) {
   let el;
   if (q('#setClose')) return closeSettings();
   if ((el = q('[data-stands-sub]'))) { S.standsSub = el.dataset.standsSub; return renderSettings(); }
-  if ((el = q('[data-stab]'))) { window.standDirty?.(); S.tab = el.dataset.stab; renderSettings(); if (S.tab === 'doctor' && !S.doctor) runDoctor(); return; }
+  if ((el = q('[data-stab]'))) { window.standDirty?.(); S.tab = el.dataset.stab; renderSettings(); openMaintData(); return; }
 
   // репозитории
   if ((el = q('[data-add-repo]'))) {

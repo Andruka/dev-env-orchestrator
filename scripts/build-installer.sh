@@ -13,7 +13,7 @@ node --test test/*.test.js >/dev/null 2>&1 || { echo "Тесты не прохо
 node scripts/check-contrast.js >/dev/null || { echo "Контраст тем не проходит (node scripts/check-contrast.js)" >&2; exit 1; }
 
 mkdir -p "$STAGE/app" dist
-cp -r bin lib public assets docs defaults.json package.json README.md server.js "$STAGE/app/"
+cp -r bin lib public assets docs defaults.json package.json README.md CHANGELOG.md server.js "$STAGE/app/"
 [[ -f LICENSE ]] && cp LICENSE "$STAGE/app/"
 mkdir -p "$STAGE/app/plugins/steps"
 echo "$VERSION" > "$STAGE/app/VERSION"

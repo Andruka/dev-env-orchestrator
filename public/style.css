@@ -438,3 +438,54 @@ details.sec > .sec-body { padding: 2px 12px 10px; }
 .theme-sec { margin-bottom: 6px; }
 
 kbd.key-hint { background: transparent; color: inherit; margin-left: 4px; padding: 0 5px; font: 10px/16px var(--mono); border: 1px solid currentColor; border-radius: 4px; opacity: .65; }
+
+/* Баннеры под шапкой */
+.banners:empty { display: none; }
+.banner { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); font-size: var(--fs-s); flex-wrap: wrap; }
+.banner.err { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); }
+.banner .ic { flex: none; width: 16px; height: 16px; }
+.banner.err .ic:first-child { color: var(--danger); }
+.banner button.sm { padding: 2px 9px; }
+
+/* Подсказки по ошибкам задач */
+.hint-box { display: flex; gap: 10px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--surface); }
+.hint-box > .ic { flex: none; margin-top: 2px; color: var(--accent); }
+.hint-box b { font-weight: 600; }
+.hint-box p { margin: 2px 0 6px; color: var(--dim); }
+.hint-fix { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hint-fix code { padding: 2px 8px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-s); font-size: var(--fs-s); user-select: all; }
+
+/* Исправление несовпадения стендов, что нового, журнал */
+.fix-list { display: grid; gap: 8px; margin-top: 12px; }
+.fix-list button { justify-content: flex-start; text-align: left; padding: 10px 12px; white-space: normal; }
+.fix-list button span { display: grid; gap: 2px; }
+.fix-list button small { color: var(--dim); font-size: var(--fs-s); font-weight: 400; }
+.fix-list button.danger small { color: var(--dim); }
+.whatsnew { margin: 0; padding-left: 20px; display: grid; gap: 4px; color: var(--dim); }
+.jr .ic { flex: none; color: var(--faint); }
+.jr.bad .ic, .jr.bad .name { color: var(--danger); }
+.jr-time { color: var(--faint); font-size: var(--fs-s); white-space: nowrap; }
+.journal { max-height: 60vh; overflow: auto; }
+.veil { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; background: var(--overlay); }
+.veil-box { padding: 18px 24px; border-radius: var(--r-l); background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; }
+
+/* Поиск проектов, ветки */
+.repo-search { margin-bottom: 12px; }
+.repo-search input { width: 100%; }
+.repo-branch.base { color: var(--faint); }
+.repo-branch.topic { color: var(--accent); }
+
+/* Мастер первого запуска */
+.modal.wizard { width: min(640px, calc(100vw - 32px)); }
+.wz-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.wz-head h2 { font-size: var(--fs-xl); margin: 0; }
+.wz-steps { list-style: none; display: flex; gap: 6px; padding: 0; margin: 0 0 16px; flex-wrap: wrap; }
+.wz-steps li { display: flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--line); border-radius: 99px; color: var(--faint); font-size: var(--fs-s); }
+.wz-steps li span { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--raised); font-size: 11px; }
+.wz-steps li span .ic { width: 12px; height: 12px; }
+.wz-steps li.cur { color: var(--text); border-color: var(--accent); }
+.wz-steps li.cur span { background: var(--accent); color: var(--on-accent); }
+.wz-steps li.done { color: var(--dim); }
+.wz-steps li.done span { background: var(--alive); color: var(--on-accent); }
+.wz-body { min-height: 220px; max-height: 52vh; overflow: auto; }
+.wz-body h3 { margin: 0 0 6px; font-size: var(--fs-l); }

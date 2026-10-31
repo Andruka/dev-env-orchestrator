@@ -22,6 +22,7 @@ const frontService = () => state.services.find(s => s.name === 'frontend' && s.s
 const frontPort = () => state.config.vars.frontendPort || 3000;
 
 function isAlive(p) {
+  if (p.groupObj.aliveVar) return Boolean(state.status?.groupPorts?.[p.groupObj.id]);
   if (p.groupObj.kind === 'compose') return isUp(projectStatus(p.id));
   if (p.groupObj.kind === 'node') return state.services.some(s => s.project === p.name && s.status === 'running');
   return false;
@@ -55,6 +56,15 @@ function renderEnv() {
   if (hasCompose) {
     items.push(`<div class="env-item off"><span class="dot ${state.status.ports.db ? 'alive' : ''}"></span><span class="k">PostgreSQL</span><span class="v mono">:${state.config.vars.dbPort || 5432}</span></div>`);
   }
+  const sw = state.status.swagger && allProjects().find(p => p.groupObj.id === 'swagger');
+  if (sw) {
+    const up = state.status.swagger.ui, busy = runningJob(sw.group);
+    items.push(up
+      ? `<div class="env-item"><span class="dot alive"></span><span class="k">Swagger</span><span class="v mono">:${state.config.vars.swaggerUiPort}</span>
+        <button class="ghost" data-action="swaggerOpen" data-project="${esc(sw.id)}" title="Открыть Swagger UI в браузере">${icon('globe')} Открыть</button></div>`
+      : `<div class="env-item off"><span class="dot"></span><span class="k">Swagger</span><span class="v">не запущен</span>
+        ${state.config.actions.swaggerStart ? `<button class="ghost" ${busy ? 'disabled' : ''} data-action="swaggerStart" data-project="${esc(sw.id)}" title="Поднять Swagger UI и mock">${icon('play')} Запустить</button>` : ''}</div>`);
+  }
   items.push(standChip());
   if (hasNode) items.push(authChip());
   const job = state.jobs.find(j => j.status === 'running');
@@ -83,8 +93,8 @@ function standChip() {
   const bad = (sc?.mismatch || [])[0];
   if (bad) {
     const back = bad.standTitle || bad.stand;
-    return `<div ${attrs} title="${esc(`Фронтенд и вход панели идут на стенд ${front}, а бэкенд на :${bad.port} (процесс ${bad.process}) запущен с окружением ${back}. Токен стенда ${front} бэкенд не примет (401). Перезапустите бэкенд с окружением ${front}: переменные — кнопка «Для IDE» у стенда; или переключите стенд на ${back}.${how}`)}">
-      <span class="dot warn"></span><span class="k">Стенд</span><span class="v">фронт и вход: ${esc(front)}</span><span class="v warn">бэкенд :${bad.port}: ${esc(back)}</span>${caret}</div>`;
+    return `<div class="env-item off click" data-stand-fix role="button" tabindex="0" title="${esc(`Фронтенд и вход панели идут на стенд ${front}, а бэкенд на :${bad.port} (процесс ${bad.process}) запущен с окружением ${back}. Токен стенда ${front} бэкенд не примет (401).\n\nКлик — варианты исправления.`)}">
+      <span class="dot warn"></span><span class="k">Стенд</span><span class="v">фронт и вход: ${esc(front)}</span><span class="v warn">бэкенд :${bad.port}: ${esc(back)}</span>${icon('wrench')}</div>`;
   }
   const be = (sc?.backends || []).find(b => b.stand);
   return `<div ${attrs} title="${esc(`${sc?.front ? `Фронтенд и вход панели подключены к стенду ${front}${be ? `; бэкенд на :${be.port} работает с тем же окружением` : ''}` : 'Стенд фронтенда не определён'}${how}`)}"><span class="dot ${be ? 'alive' : ''}"></span><span class="k">Стенд</span><span class="v">${esc(front)}</span>${caret}</div>`;
@@ -143,23 +153,33 @@ function welcomeHtml() {
       <li><b>Введите логин</b> для входа во фронтенд (по желанию).</li>
     </ol>
     <div class="row">
-      <button class="primary" data-open-settings="repos">${icon('folder-open')} Выбрать папку и репозитории</button>
+      <button class="primary" data-open-wizard>${icon('sparkles')} Мастер настройки</button>
+      <button data-open-settings="repos">${icon('folder-open')} Выбрать папку и репозитории</button>
       <button data-open-settings="doctor">${icon('stethoscope')} Проверить окружение</button>
       <button class="ghost" data-open-settings="help">${icon('book-open')} Как это работает</button>
     </div>
   </div>`;
 }
 
+const BASE_BRANCHES = new Set(['main', 'master', 'develop', 'dev']);
+const repoMatch = (p, git) => {
+  const q = (state.repoQ || '').trim().toLowerCase();
+  return !q || p.name.toLowerCase().includes(q) || String(git.branch || '').toLowerCase().includes(q);
+};
+
 function renderRepos() {
   if (!state.config) return;
   const noProjects = !allProjects().length;
-  const html = (noProjects ? welcomeHtml() : '') + state.config.groups.map(g => `
+  const search = allProjects().length > 3
+    ? `<div class="repo-search" data-key="repo-search"><input id="repoFilter" type="search" placeholder="Поиск проекта или ветки…   /" aria-label="Поиск проекта или ветки" autocomplete="off" spellcheck="false"></div>` : '';
+  const html = (noProjects ? welcomeHtml() : '') + search + state.config.groups.map(g => `
     <div class="group">
       <h2 class="group-title">${esc(g.title)} <span class="count">${g.projects.length}</span></h2>
       ${g.projects.length ? g.projects.map(p0 => {
     const p = { ...p0, groupObj: g };
     const st = projectStatus(p.id);
     const git = st.git || {};
+    if (!repoMatch(p, git) && state.sel !== p.id) return '';
     const alive = isAlive(p);
     const sel = state.sel === p.id;
     const job = runningJob(g.id);
@@ -173,14 +193,14 @@ function renderRepos() {
       git.ahead ? `<span class="badge" title="Впереди ${esc(git.upstream)} на ${git.ahead}">${icon('arrow-up')}${git.ahead}</span>` : '',
       git.stashes ? `<span class="badge" title="Записей в stash: ${git.stashes}">${icon('archive')}${git.stashes}</span>` : '',
       mine ? `<span class="badge busy"><span class="spin">${icon('loader')}</span> ${esc(job.title)}</span>` : '',
-      alive && !mine ? `<span class="badge alive">${g.kind === 'compose' ? 'запущен' : 'npm start'}</span>` : '',
+      alive && !mine ? `<span class="badge alive">${g.kind === 'node' ? 'npm start' : 'запущен'}</span>` : '',
     ].join('');
     return `
         <article class="repo ${sel ? 'sel' : ''} ${alive ? 'alive' : ''} ${p.missing ? 'missing' : ''}" data-repo="${esc(p.id)}" data-key="${esc(p.id)}">
           <div class="repo-row" role="button" tabindex="0" aria-expanded="${sel}" aria-label="${esc(p.name)}">
             <span class="dot ${mine ? 'busy' : alive ? 'alive' : ''}"></span>
             <span class="repo-name">${esc(p.name)}</span>
-            <span class="repo-branch ${detached ? 'detached' : ''}" title="${esc(git.branch)}">${git.branch ? icon('git-branch') : ''}${esc(git.branch || '—')}</span>
+            <span class="repo-branch ${detached ? 'detached' : BASE_BRANCHES.has(git.branch) ? 'base' : 'topic'}" title="${esc(git.branch)}">${git.branch ? icon('git-branch') : ''}${esc(git.branch || '—')}</span>
             <span class="badges">${badges}</span>
             <span class="primary-slot">${g.primary ? actionButton(g.primary, p, { primary: sel }) : ''}</span>
           </div>
@@ -230,7 +250,7 @@ function renderSnapshots(p) {
     const date = new Date(sn.createdAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     return `<div class="snap" title="${esc(sn.id)}" data-key="${esc(sn.id)}">
       <span class="badge ${sn.kind === 'manual' ? 'alive' : ''}" title="${esc(kindHint)}">${esc(kind)}</span>
-      <span class="snap-label">${esc(sn.kind === 'fresh' ? sn.branch : sn.label)}</span>
+      <span class="snap-label">${esc(sn.kind === 'fresh' ? sn.branch : sn.label)}${(sn.stands || []).map(t => ` <span class="badge" title="Снимок сделан, когда был включён этот стенд">${esc(t)}</span>`).join('')}${sn.kind !== 'fresh' && sn.branch ? ` <span class="badge" title="Ветка на момент снимка">${icon('git-branch')}${esc(sn.branch)}</span>` : ''}</span>
       <span class="snap-meta">${esc(sn.kind === 'fresh' ? `${sn.migrations} файлов миграций · ` : sn.kind === 'manual' ? `${sn.project} · ` : '')}${fmtSize(sn.size)} · ${date}</span>
       <span class="snap-actions">
         <button class="ghost" ${busy ? 'disabled' : ''} data-snap-restore="${esc(sn.id)}" data-project="${esc(p.id)}" title="Заменить текущую базу этим снимком">${icon('history')} Восстановить</button>
@@ -266,7 +286,12 @@ async function runAction(projectId, actionId, preset = {}) {
     const shown = { ...params };
     const snap = params.snapshot && (state.status?.snapshots || []).find(x => x.id === params.snapshot);
     if (snap) shown.snapshot = snap.label || snap.id;
-    const msg = tpl(action.confirm || `${action.title}: ${action.hint || ''}`, { ...state.config.vars, ...shown, project });
+    let msg = tpl(action.confirm || `${action.title}: ${action.hint || ''}`, { ...state.config.vars, ...shown, project });
+    // снимок подписан стендом: предупреждаем, если сейчас включён другой
+    if (snap?.stands?.length) {
+      const now = (state.config.envs || []).filter(e => standIsOn(e, projectStatus(project.id).swaps || [])).map(e => e.title);
+      if (!snap.stands.some(t => now.includes(t))) msg += `\n\n⚠ Снимок сделан на стенде «${snap.stands.join('», «')}», а сейчас включён ${now.length ? `«${now.join('», «')}»` : 'другой (или не определён)'}. База может не подойти окружению.`;
+    }
     if (!(await confirmDialog(`${action.title} · ${project.name}`, msg, action.danger))) return;
   }
   try {
@@ -300,7 +325,7 @@ function paletteItems() {
     ['env', 'sliders-horizontal', 'Пути и порты', 'настройки окружение пути переменные порты браузер дампы'],
     ['login', 'key-round', 'Вход во фронтенд', 'настройки вход логин пароль'],
     ['look', 'palette', 'Оформление', 'настройки тема цвет оформление плотность'],
-    ['doctor', 'stethoscope', 'Проверка окружения', 'диагностика проверка docker zstd окружение'],
+    ['doctor', 'stethoscope', 'Обслуживание', 'обслуживание диагностика проверка диск журнал обновление профиль docker zstd'],
     ['help', 'book-open', 'Справка и горячие клавиши', 'справка помощь клавиши инструкция'],
   ];
   for (const [tab, ic, title, text] of nav) items.push({ kind: 'settings', tab, ic, title: `Настройки: ${title}`, text: `${title} ${text}`.toLowerCase(), boost: -1 });
@@ -411,6 +436,7 @@ function renderJobView() {
         ${s.progress != null && s.status === 'running' ? `<span class="progress"><span class="bar"><i style="width:${s.progress}%"></i></span>${s.progress}%</span>` : '<span></span>'}</li>`).join('')}
     </ol>
     ${job.error ? `<div class="job-error">${esc(job.error)}</div>` : ''}
+    ${(job.hints || []).map(hintHtml).join('')}
     ${others.length ? `<div class="history"><div class="history-title">История запусков</div><div class="history-list">${others.map(j => `
       <div class="history-row" role="button" tabindex="0" data-job="${j.id}">${JOB_IC[j.status] || ''} ${esc(j.title)} <span style="color:var(--faint)">${esc(j.project)}</span><span class="time">${fmtWhen(j.startedAt)}</span></div>`).join('')}</div></div>` : ''}`);
 }
@@ -568,6 +594,7 @@ document.addEventListener('click', e => {
   if (sd) return runAction(sd.dataset.project, 'snapDelete', { snapshot: sd.dataset.snapDelete });
   const btn = t.closest('button[data-action]');
   if (btn) { e.stopPropagation(); return runAction(btn.dataset.project, btn.dataset.action); }
+  if (t.closest('[data-open-wizard]')) return openWizard(0);
   const sm = t.closest('[data-stand-menu]');
   if (sm) return toggleStandMenu(sm);
   if (!t.closest('.pop-menu')) closeStandMenu();
@@ -628,6 +655,19 @@ document.addEventListener('keydown', e => {
     select(state.sel);
   }
 });
+
+document.addEventListener('input', e => {
+  if (e.target.id !== 'repoFilter') return;
+  state.repoQ = e.target.value;
+  renderRepos();
+});
+document.addEventListener('keydown', e => {
+  if (e.target.id === 'repoFilter' && e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; state.repoQ = ''; renderRepos(); }
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !document.querySelector('dialog[open]') && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) {
+    const f = $('#repoFilter');
+    if (f) { e.preventDefault(); f.focus(); f.select(); }
+  }
+}, true);
 
 $('#paletteBtn').onclick = openPalette;
 $('#settingsBtn').onclick = () => openSettings();
@@ -770,5 +810,11 @@ const debouncedReload = debounce(reloadConfig, 150);
   renderAll();
   await refreshStatus();
   connect();
+  maybeWhatsNew();
+  checkHealth();
+  checkUpdate();
+  setInterval(checkHealth, 10 * 60 * 1000);
+  setInterval(() => checkUpdate(), 30 * 60 * 1000);
+  maybeStartWizard?.();
   setInterval(() => { if (!modalOpen() && state.jobs.some(j => j.status === 'running')) { renderJobView(); renderEnv(); } }, 1000);
 })();
