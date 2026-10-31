@@ -23,6 +23,11 @@ printf "window.env = {\n  BACKEND_URL: 'https://10.0.0.1:5008',\n};\n" > "$R/CLI
 touch "$SB/home/work/calplan/server/docker-compose-without-qt.yml" "$SB/home/work/calplan/server_old/docker-compose-without-qt.yml"
 export HOME="$SB/home" XDG_CONFIG_HOME="$SB/home/.config" XDG_STATE_HOME="$SB/home/.local/state" XDG_DATA_HOME="$SB/home/.local/share"
 mkdir -p "$XDG_CONFIG_HOME/dev-panel"
-echo "{\"vars\":{\"port\":$PORT}}" > "$XDG_CONFIG_HOME/dev-panel/config.json"
+# репозиторий swagger для проверки группы Swagger (скрипты-пустышки)
+mkdir -p "$R/swagger"; git -C "$R/swagger" init -q -b main; git -C "$R/swagger" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+printf '#!/usr/bin/env bash\necho build-ok\n' > "$R/swagger/build.sh"; printf '#!/bin/sh\necho start-ok\n' > "$R/swagger/start.sh"; touch "$R/swagger/docker-compose.yml"
+# SANDBOX_ROOT=1 — сразу указать корневую папку (иначе панель стартует «с нуля», как у нового пользователя)
+if [[ "${SANDBOX_ROOT:-}" == 1 ]]; then ROOTVAR=",\"calplanRoot\":\"$R\""; else ROOTVAR=""; fi
+echo "{\"vars\":{\"port\":$PORT$ROOTVAR}}" > "$XDG_CONFIG_HOME/dev-panel/config.json"
 echo "sandbox: http://localhost:$PORT  (HOME=$HOME)"
 cd "$DIR" && exec node server.js

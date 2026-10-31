@@ -18,7 +18,11 @@
     "snapshotsDir": "{dataHome}/dev-panel/snapshots",
     "snapshotsKeepFresh": 8,
     "snapshotsKeepDump": 2,
-    "dc": "docker compose -f {composeFile}"
+    "dc": "docker compose -f {composeFile}",
+    "swaggerDir": "{calplanRoot}/swagger",
+    "swaggerUiPort": 9105,
+    "swaggerEditorPort": 9104,
+    "swaggerMockPort": 4010
   },
   "swaps": [
     {
@@ -116,6 +120,41 @@
       ],
       "primary": "frontDeploy",
       "exclude": []
+    },
+    {
+      "id": "swagger",
+      "title": "Swagger",
+      "kind": "generic",
+      "paths": [
+        "{swaggerDir}"
+      ],
+      "aliveVar": "swaggerUiPort",
+      "sections": [
+        {
+          "title": "Git",
+          "actions": [
+            "checkout",
+            "pull",
+            "stash",
+            "stashPop"
+          ]
+        },
+        {
+          "title": "Swagger",
+          "actions": [
+            "swaggerBuild",
+            "swaggerStart",
+            "swaggerOpen",
+            "swaggerMockOpen",
+            "swaggerEditor",
+            "swaggerValidate",
+            "swaggerStop",
+            "openFolder"
+          ]
+        }
+      ],
+      "primary": "swaggerBuild",
+      "exclude": []
     }
   ],
   "actions": {
@@ -133,7 +172,7 @@
         {
           "title": "git fetch",
           "type": "shell",
-          "cmd": "git fetch --all --prune"
+          "cmd": "curl -sk -o /dev/null --max-time 3 http://localhost:{swaggerMockPort} || { echo 'Mock не отвечает на порту {swaggerMockPort} — запустите Swagger'; exit 1; }"
         },
         {
           "title": "git checkout {branch}",
@@ -575,6 +614,105 @@
           "title": "npm ci",
           "type": "shell",
           "cmd": "npm ci && H=$(cat package-lock.json <(node -v) | sha256sum | cut -c1-64) && mkdir -p node_modules && echo \"$H\" > node_modules/.dev-panel-lock"
+        }
+      ]
+    },
+    "swaggerBuild": {
+      "title": "Собрать и запустить",
+      "icon": "hammer",
+      "hint": "Проверить спецификацию, собрать bundle.json и поднять Swagger UI и mock (build.sh репозитория swagger)",
+      "steps": [
+        {
+          "title": "build.sh",
+          "type": "shell",
+          "cmd": "bash ./build.sh"
+        }
+      ]
+    },
+    "swaggerStart": {
+      "title": "Запустить (UI + mock)",
+      "icon": "play",
+      "hint": "Поднять Swagger UI и mock уже собранной спецификации (start.sh)",
+      "steps": [
+        {
+          "title": "start.sh",
+          "type": "shell",
+          "cmd": "bash ./start.sh"
+        }
+      ]
+    },
+    "swaggerOpen": {
+      "title": "Открыть Swagger UI",
+      "icon": "globe",
+      "hint": "Открыть локальный Swagger UI в браузере по умолчанию",
+      "steps": [
+        {
+          "title": "Проверка",
+          "type": "shell",
+          "cmd": "curl -sk -o /dev/null --max-time 3 http://localhost:{swaggerUiPort} || { echo 'Swagger UI не отвечает на порту {swaggerUiPort} — нажмите «Собрать и запустить» или «Запустить»'; exit 1; }"
+        },
+        {
+          "title": "xdg-open",
+          "type": "detached",
+          "cmd": "xdg-open http://localhost:{swaggerUiPort}"
+        }
+      ]
+    },
+    "swaggerMockOpen": {
+      "title": "Открыть mock",
+      "icon": "globe",
+      "hint": "Открыть mock-сервер (prism) в браузере: порт {swaggerMockPort}",
+      "steps": [
+        {
+          "title": "Проверка",
+          "type": "shell",
+          "cmd": "curl -sk -o /dev/null --max-time 3 http://localhost:{swaggerMockPort} || { echo 'Mock не отвечает на порту {swaggerMockPort} — запустите Swagger'; exit 1; }"
+        },
+        {
+          "title": "xdg-open",
+          "type": "detached",
+          "cmd": "xdg-open http://localhost:{swaggerMockPort}"
+        }
+      ]
+    },
+    "swaggerEditor": {
+      "title": "Редактор",
+      "icon": "pencil",
+      "hint": "Поднять Swagger Editor и открыть его в браузере",
+      "steps": [
+        {
+          "title": "docker compose up editor",
+          "type": "shell",
+          "cmd": "sh ./createEnvIfNotExists.sh && docker compose -f docker-compose.yml up -d editor"
+        },
+        {
+          "title": "xdg-open",
+          "type": "detached",
+          "cmd": "xdg-open http://localhost:{swaggerEditorPort}"
+        }
+      ]
+    },
+    "swaggerValidate": {
+      "title": "Проверить спецификацию",
+      "icon": "shield-check",
+      "hint": "Проверить api/main.yaml без сборки",
+      "steps": [
+        {
+          "title": "validate",
+          "type": "shell",
+          "cmd": "sh ./createEnvIfNotExists.sh && docker compose -f docker-compose.yml run -T --rm cli validate api/main.yaml"
+        }
+      ]
+    },
+    "swaggerStop": {
+      "title": "Остановить",
+      "icon": "square",
+      "hint": "Остановить контейнеры Swagger (UI, mock, редактор)",
+      "steps": [
+        {
+          "title": "docker compose down",
+          "type": "shell",
+          "cmd": "docker compose -f docker-compose.yml down"
         }
       ]
     },

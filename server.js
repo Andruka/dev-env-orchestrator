@@ -19,6 +19,10 @@ const fsBrowse = require('./lib/fsBrowse');
 const doctor = require('./lib/doctor');
 const envswap = require('./lib/envswap');
 const stands = require('./lib/stands');
+const journal = require('./lib/journal');
+const ports = require('./lib/ports');
+const cleanup = require('./lib/cleanup');
+const selfupdate = require('./lib/selfupdate');
 const pkg = require('./package.json');
 
 let config = load();
@@ -53,7 +57,7 @@ function httpError(code, message) {
 }
 
 // Переменные, нужные интерфейсу (остальные — пути и команды — наружу не отдаём)
-const CLIENT_VARS = ['frontendUrl', 'frontendPort', 'dbPort', 'debugPort', 'calplanRoot', 'composeFile'];
+const CLIENT_VARS = ['frontendUrl', 'frontendPort', 'dbPort', 'debugPort', 'calplanRoot', 'composeFile', 'swaggerUiPort', 'swaggerEditorPort', 'swaggerMockPort'];
 
 function publicConfig() {
   return {
@@ -94,7 +98,14 @@ function adminModel() {
     prefs: config.prefs,
     swaps: config.swaps,
     defaultSwaps: defaults.swaps || [],
-    envs: config.envs,
+    envs: config.envs.map(e => ({
+      ...e,
+      // файлы стенда в библиотеке панели, которых нет (например, после импорта профиля коллеги)
+      missing: Object.entries(e.picks || {}).filter(([slotId, rel]) => {
+        const slot = config.swaps.find(s => s.id === slotId);
+        return slot && rel.startsWith('@') && !envswap.libVariants(slot).some(v => v.rel === rel);
+      }).map(([slotId, rel]) => ({ slot: slotId, file: rel.slice(1) })),
+    })),
     standCreds: secrets.publicView().stands,
     // какие файлы можно выбрать в слоте: объединение вариантов по всем репозиториям группы
     swapFiles: Object.fromEntries(config.swaps.map(sw => [sw.id, [...new Set(
@@ -166,12 +177,13 @@ const routes = {
     const vars = envswap.readStandIde(e.id);
     return { text: Object.entries(vars).map(([k, v]) => `${k}=${v.includes('\n') ? `"${v}"` : v}`).join('\n') };
   },
-  'POST /api/stands/save': mutate(b => { const r = stands.save(config, b); setTimeout(() => authKeeper.tick(), 0); return r; }),
-  'POST /api/stands/delete': mutate(b => { stands.remove(config, b.id); setTimeout(() => authKeeper.tick(), 0); return {}; }),
+  'POST /api/stands/save': mutate(b => { const r = stands.save(config, b); journal.add('stand', `Стенд «${b.title}» ${b.id ? 'изменён' : 'создан'}`); setTimeout(() => authKeeper.tick(), 0); return r; }),
+  'POST /api/stands/delete': mutate(b => { const t = (config.envs || []).find(e => e.id === b.id)?.title; stands.remove(config, b.id); journal.add('stand', `Стенд «${t || b.id}» удалён`); setTimeout(() => authKeeper.tick(), 0); return {}; }),
   'POST /api/env/apply': (q, body) => {
     const project = findProject(body.project);
     const slot = envswap.findSlot(config, project, body.slot);
     const r = envswap.apply(project, slot, body.variant, config);
+    journal.add('stand', `${project.name}: ${slot.title} → ${String(body.variant).replace(/^@/, '')}`, { changed: r.changed });
     bus.emit('config', {});
     return { ...r, project: project.name, state: envswap.slotState(project, slot) };
   },
@@ -179,6 +191,7 @@ const routes = {
     const preset = config.envs.find(e => e.id === body.id);
     if (!preset) throw httpError(404, 'Окружение не найдено');
     const results = envswap.applyPreset(config, preset, body.projects || {});
+    journal.add('stand', `Стенд «${preset.title}» применён`, { projects: [...new Set(results.map(r => r.project))].join(', '), changed: results.some(r => r.changed) });
     bus.emit('config', {});
     return { ok: true, title: preset.title, results };
   },
@@ -234,6 +247,33 @@ const routes = {
     const { user } = await auth.login(l => lines.push(l));
     return { ok: true, lines, user };
   },
+  'POST /api/stands/test': async (q, body) => {
+    const e = (config.envs || []).find(x => x.id === body.id);
+    if (!e) throw httpError(404, 'Стенд не найден');
+    if (!e.origin) throw httpError(400, 'У стенда не определён адрес бэкенда — укажите его в форме стенда');
+    return { title: e.title, origin: e.origin, ...(await auth.testOrigin(e.origin)) };
+  },
+  'GET /api/port': async (q) => ports.info(q.port),
+  'POST /api/port/free': async (q, body) => {
+    const r = await ports.free(body.port);
+    journal.add('port', `Освобождён порт ${body.port}`, { note: r.note });
+    return r;
+  },
+  'GET /api/cleanup': () => cleanup.scan(config),
+  'POST /api/cleanup': async (q, body) => {
+    const r = await cleanup.act(config, body.what, body.arg);
+    journal.add('cleanup', r.note || body.what);
+    return r;
+  },
+  'GET /api/journal': (q) => journal.list({ limit: Math.min(Number(q.limit) || 200, 800), type: q.type }),
+  'GET /api/update': async (q) => ({ ...(await selfupdate.check({ fresh: q.fresh === '1' })), changelog: selfupdate.changelog() }),
+  'POST /api/update/apply': async () => {
+    const r = await selfupdate.apply({ busy: runner.list().some(j => j.status === 'running') });
+    if (r.updated) journal.add('update', `Панель обновлена: ${r.from} → ${r.to}`, { commits: r.note });
+    return r;
+  },
+  'GET /api/profile': () => admin.exportProfile(),
+  'POST /api/profile': mutate(b => ({ added: admin.importProfile(b) })),
   'GET /api/auth': () => authKeeper.state(),
   'POST /api/auth/check': async () => { await authKeeper.tick(); return authKeeper.state(); },
   'GET /api/services': () => services.list(),
@@ -295,6 +335,17 @@ server.on('upgrade', (req, socket) => {
 });
 
 setInterval(() => bus.ping(), 20000);
+
+// Журнал: итог каждой задачи (один раз, когда она завершилась)
+const journaled = new Set();
+runner.onFinish = job => {
+  if (journaled.has(job.id)) return;
+  journaled.add(job.id);
+  const ok = job.status === 'done';
+  journal.add('job', `${job.title} · ${job.project}: ${ok ? 'готово' : job.status === 'cancelled' ? 'отменено' : 'ошибка'}`, {
+    action: job.action, status: job.status, seconds: Math.round(((job.finishedAt || Date.now()) - job.startedAt) / 1000), ...(job.error && { error: String(job.error).slice(0, 200) }),
+  });
+};
 
 services.adopt();
 

@@ -283,10 +283,10 @@ function standsPane() {
   const list = m.envs.map(e => {
     const c = e.origin && creds(e.origin);
     return `<div class="list-row">
-      ${icon('server')}<div class="grow"><span class="name">${esc(e.title)}</span>
+      ${icon('server')}<div class="grow"><span class="name">${esc(e.title)}${e.missing?.length ? ` <span class="badge warn" title="${esc(`Нет файлов в библиотеке панели: ${e.missing.map(x => x.file).join(', ')}. Откройте «Изменить» и выберите файлы (профиль коллеги переносит названия, а не сами файлы).`)}">нет файлов: ${e.missing.length}</span>` : ''}</span>
         <span class="sub">${swapSummary(e, m) || '—'}</span>
         <span class="sub">${e.origin ? `<span class="mono">${esc(e.origin)}</span> · ` : ''}${c ? `логин ${esc(c.login)}` : 'общий логин'}${e.ide ? ' · есть переменные для IDE' : ''}${e.startUrl ? ` · <span class="mono">${esc(e.startUrl.replace(/^https?:\/\/[^/]+/, ''))}</span>` : ''}${e.note ? ` · ${esc(e.note)}` : ''}</span></div>
-      <div class="row-actions"><button type="button" class="ghost sm" data-stand-edit="${esc(e.id)}">${icon('pencil')} Изменить</button>
+      <div class="row-actions">${e.origin ? `<button type="button" class="ghost sm" data-stand-test="${esc(e.id)}" title="Проверить: сервер отвечает, логин принят">${icon('activity')} Проверить соединение</button>` : ''}<button type="button" class="ghost sm" data-stand-edit="${esc(e.id)}">${icon('pencil')} Изменить</button>
       <button type="button" class="ghost sm danger-ghost" data-stand-del="${esc(e.id)}" aria-label="Удалить стенд ${esc(e.title)}">${icon('trash-2')}</button></div></div>`;
   }).join('');
   return `<h2 class="pane-title">Стенды</h2>
@@ -329,6 +329,7 @@ const val = id => document.getElementById(id)?.value ?? '';
 // Возвращает промис, если клик относится к этому разделу
 function standsClick(q) {
   let el;
+  if ((el = q('[data-stand-test]'))) return testStand(el.dataset.standTest, el);
   if (q('[data-stand-new]')) { openStand(blankStand()); return renderSettings(); }
   if ((el = q('[data-stand-edit]'))) {
     const e = S.model.envs.find(x => x.id === el.dataset.standEdit);

@@ -73,6 +73,28 @@ test('интерфейс: загрузка, настройки, темы, пер
     }
   });
 
+  await t.test('«Обслуживание»: все подвкладки загружаются без ошибок', async () => {
+    const r = await ev(`(async () => {
+      await openSettings('doctor');
+      const out = [];
+      for (const sub of ['check', 'disk', 'journal', 'about']) {
+        document.querySelector('[data-maint-sub="' + sub + '"]').click();
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          if (!/Считаю…|Загружаю…|Проверяю/.test(document.querySelector('#setBody').innerText)) break;
+        }
+        const t = document.querySelector('#setBody').innerText;
+        out.push([sub, t.length, /undefined|NaN|\\[object/.test(t), /Считаю…|Загружаю…/.test(t)]);
+      }
+      return JSON.stringify(out);
+    })()`);
+    for (const [sub, len, broken, loading] of JSON.parse(r)) {
+      assert.ok(len > 40, `подвкладка ${sub} пустая`);
+      assert.ok(!broken, `подвкладка ${sub}: undefined/NaN в тексте`);
+      assert.ok(!loading, `подвкладка ${sub} зависла на загрузке`);
+    }
+  });
+
   await t.test('выбор темы: фильтр, поиск, избранное', async () => {
     const r = await ev(`(async () => {
       S.tab = 'look'; S.themeFilter = 'all'; S.themeQ = ''; renderSettings();
