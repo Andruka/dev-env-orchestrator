@@ -210,3 +210,22 @@ test('шаг freeSubnets: чужая пустая сеть удаляется, �
     await run(`docker network rm ${other}`);
   }
 });
+
+test('контрольные суммы миграций: падение шага up и отдельная подсказка', () => {
+  const up = require('../defaults.json').actions.up.steps.find(x => x.type === 'service');
+  const fail = new RegExp(up.failPattern);
+  assert.ok(fail.test('new-server-liquibase-1 exited with code 1'), 'код выхода liquibase 1 останавливает задачу');
+  assert.ok(!fail.test('new-server-liquibase-1 exited with code 0'));
+  const { analyze } = require('../lib/hints');
+  const log = [
+    'new-server-liquibase-1  | ERROR: Exception Primary Class:  ValidationFailedException',
+    'new-server-liquibase-1  | Unexpected error running Liquibase: Validation Failed:',
+    'new-server-liquibase-1  |      1 changesets check sum',
+    'new-server-liquibase-1  |           changelog/1.0.1/a/002_x.sql::1::a.kuz was: 9:d2e6 but is now: 9:e41d',
+    'new-server-liquibase-1 exited with code 1',
+  ];
+  const h = analyze(log, 'ошибка: new-server-liquibase-1 exited with code 1');
+  assert.deepStrictEqual(h.map(x => x.id), ['checksum'], 'общая «ошибка миграции» не дублируется');
+  assert.match(h[0].text, /002_x\.sql::1::a\.kuz/);
+  assert.strictEqual(analyze(['liquibase-1 | ERROR: что-то другое'])[0].id, 'migration');
+});
