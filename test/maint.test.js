@@ -14,6 +14,7 @@ test('подсказки: занятый порт, docker, место, вход'
   assert.strictEqual(analyze(['Cannot connect to the Docker daemon at unix:///var/run/docker.sock'])[0].id, 'dockerd');
   assert.strictEqual(analyze(['write /x: no space left on device'])[0].fix.tab, 'doctor');
   assert.strictEqual(analyze(['failed to create network server_backend: Error response from daemon: invalid pool request: Pool overlaps with other one on this address space'])[0].id, 'subnet');
+  assert.deepStrictEqual(analyze(['Pool overlaps with other one on this address space'])[0].fix, { kind: 'networks' });
   assert.strictEqual(analyze(['POST /token: HTTP 401 bad'], '')[0].id, 'login');
   assert.deepStrictEqual(analyze(['всё хорошо'], ''), []);
 });
@@ -122,4 +123,49 @@ test('Swagger: группа и действия есть в настройках
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ version: 1, vars: {}, groups: {}, customGroups: [], actions: {}, prefs: {} }));
   fresh('../lib/userConfig', '../lib/config');
   assert.strictEqual(require('../lib/config').load().groups.find(x => x.id === 'swagger').projects.length, 0);
+});
+
+test('сети docker: удаляются только пустые сети compose, чужие и занятые не трогаются', async (t) => {
+  const { run } = require('../lib/proc');
+  if ((await run('docker info')).code !== 0) return t.skip('docker недоступен');
+  const { unused, prune } = require('../lib/networks');
+  const tag = `dptest${process.pid}`;
+  const mine = `${tag}_backend`, plain = `${tag}_plain`;
+  await run(`docker network create --label com.docker.compose.project=${tag} ${mine}`);
+  await run(`docker network create ${plain}`);
+  try {
+    const names = (await unused()).map(n => n.name);
+    assert.ok(names.includes(mine), 'пустая сеть compose в списке');
+    assert.ok(!names.includes(plain), 'сеть без метки compose не в списке');
+    assert.ok(!names.includes('bridge'));
+    const r = await prune([mine, plain, 'bridge', 'bad name; rm']);
+    assert.deepStrictEqual(r.removed, [mine]);
+    assert.deepStrictEqual(r.skipped.sort(), ['bad name; rm', 'bridge', plain].sort());
+    await assert.rejects(prune([]));
+  } finally {
+    await run(`docker network rm ${mine} ${plain}`);
+  }
+});
+
+test('сети docker: фильтр по подсети compose-файла', async (t) => {
+  const { overlaps, composeSubnets, unused, prune } = require('../lib/networks');
+  assert.ok(overlaps('172.30.77.0/24', '172.30.0.0/16'));
+  assert.ok(!overlaps('172.30.77.0/24', '172.31.0.0/16'));
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dpnet-')), 'c.yml');
+  fs.writeFileSync(f, 'networks:\n  backend:\n    ipam:\n      config:\n        - subnet: 172.30.77.0/24\n          gateway: 172.30.77.1\n');
+  assert.deepStrictEqual(composeSubnets(f), ['172.30.77.0/24']);
+  assert.deepStrictEqual(composeSubnets('/нет/такого'), []);
+  const { run } = require('../lib/proc');
+  if ((await run('docker info')).code !== 0) return t.skip('docker недоступен');
+  const a = `dptest${process.pid}_a`, b = `dptest${process.pid}_b`;
+  const lbl = `--label com.docker.compose.project=dptest${process.pid}`;
+  await run(`docker network create ${lbl} --subnet 10.213.201.0/24 ${a}`);
+  await run(`docker network create ${lbl} --subnet 10.213.202.0/24 ${b}`);
+  try {
+    assert.deepStrictEqual((await unused(['10.213.201.0/24'])).map(n => n.name), [a]);
+    const r = await prune([a, b], ['10.213.201.0/24']);
+    assert.deepStrictEqual(r.removed, [a]);
+    assert.deepStrictEqual(r.skipped, [b]);
+  } finally { await run(`docker network rm ${a} ${b}`); }
 });

@@ -22,6 +22,7 @@ const stands = require('./lib/stands');
 const journal = require('./lib/journal');
 const ports = require('./lib/ports');
 const cleanup = require('./lib/cleanup');
+const networks = require('./lib/networks');
 const selfupdate = require('./lib/selfupdate');
 const pkg = require('./package.json');
 
@@ -257,6 +258,12 @@ const routes = {
   'POST /api/port/free': async (q, body) => {
     const r = await ports.free(body.port);
     journal.add('port', `Освобождён порт ${body.port}`, { note: r.note });
+    return r;
+  },
+  'GET /api/networks/unused': async (q) => ({ networks: await networks.unused(String(q.subnets || '').split(',').filter(Boolean)) }),
+  'POST /api/networks/prune': async (q, body) => {
+    const r = await networks.prune(body.names, body.subnets || []);
+    if (r.removed.length) journal.add('cleanup', `Удалены пустые сети docker: ${r.removed.join(', ')}`);
     return r;
   },
   'GET /api/cleanup': () => cleanup.scan(config),

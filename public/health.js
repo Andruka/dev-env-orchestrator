@@ -76,6 +76,7 @@ function hintHtml(h) {
   const f = h.fix;
   const btn = !f ? '' : f.kind === 'port' ? `<button class="sm" data-hint-port="${f.port}">Кто занимает порт ${f.port}?</button>`
     : f.kind === 'tab' ? `<button class="sm" data-open-settings="${esc(f.tab)}" ${f.sub ? `data-sub="${esc(f.sub)}"` : ''}>Открыть настройки</button>`
+      : f.kind === 'networks' ? `<button class="sm" data-hint-nets="${esc((f.subnets || []).join(','))}">${icon('trash-2')} Удалить пустые сети</button>`
       : f.kind === 'copy' ? `<code class="mono">${esc(f.text)}</code><button class="sm" data-hint-copy="${esc(f.text)}">${icon('copy')} Копировать</button>` : '';
   return `<div class="hint-box">${icon('info')}<div><b>${esc(h.title)}</b><p>${esc(h.text)}</p>${btn ? `<div class="hint-fix">${btn}</div>` : ''}</div></div>`;
 }
@@ -88,6 +89,15 @@ async function showPort(port) {
   if (!i.canFree) { await openDialog({ title: `Порт ${port} занят`, okLabel: 'Понятно', getValue: () => true, html: `<p>Занят: ${esc(who)}. Освободите его вручную: <span class="mono">sudo ss -ltnp 'sport = :${port}'</span></p>` }); return; }
   if (!(await confirmDialog(`Освободить порт ${port}`, `Занят: ${who}. ${i.container ? 'Контейнер будет остановлен (данные в томах и папках сохранятся).' : 'Процесс получит сигнал завершения (SIGTERM).'} Продолжить?`, true, 'Освободить'))) return;
   try { const r = await api('/api/port/free', { port }); toast(r.note || 'Порт освобождён', 'ok'); await refreshStatus(); } catch (e) { toast(e.message, 'err'); }
+}
+
+async function pruneNetworks(subnets) {
+  let list;
+  try { list = (await api('/api/networks/unused?subnets=' + encodeURIComponent(subnets))).networks; } catch (e) { return toast(e.message, 'err'); }
+  if (!list.length) return toast('Пустых сетей с этой подсетью нет — вероятно, её держит сеть с работающими контейнерами. Остановите тот проект и повторите', 'err');
+  const items = list.map(n => `${n.name}${n.subnet ? ` (${n.subnet})` : ''}`).join(', ');
+  if (!(await confirmDialog('Удалить пустые сети docker', `Подсеть занята пустыми сетями, они будут удалены: ${items}. Данные не затрагиваются, compose создаст сети заново при запуске. Продолжить?`, true, 'Удалить'))) return;
+  try { const r = await api('/api/networks/prune', { names: list.map(n => n.name), subnets: subnets ? subnets.split(',') : [] }); toast(`${r.note} — повторите запуск`, 'ok'); } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ---------- несовпадение стенда: исправление в один шаг ---------- */
@@ -150,6 +160,7 @@ document.addEventListener('click', async e => {
   if ((el = t.closest('[data-banner-close]'))) { health.dismissed.add(el.dataset.bannerClose); return renderBanners(); }
   if (t.closest('[data-update-apply]')) return applyUpdate();
   if ((el = t.closest('[data-hint-port]'))) return showPort(Number(el.dataset.hintPort));
+  if ((el = t.closest('[data-hint-nets]'))) return pruneNetworks(el.dataset.hintNets);
   if ((el = t.closest('[data-hint-copy]'))) { try { await navigator.clipboard.writeText(el.dataset.hintCopy); toast('Команда скопирована', 'ok'); } catch { toast('Не удалось скопировать — выделите текст вручную', 'err'); } return; }
   if (t.closest('[data-stand-fix]')) return standFix();
   if ((el = t.closest('[data-open-settings][data-sub]'))) { S.maintSub = el.dataset.sub; }
