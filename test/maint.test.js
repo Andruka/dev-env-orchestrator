@@ -13,6 +13,7 @@ test('подсказки: занятый порт, docker, место, вход'
   assert.strictEqual(analyze(['Error: listen EADDRINUSE: address already in use :::3000'])[0].fix.port, 3000);
   assert.strictEqual(analyze(['Cannot connect to the Docker daemon at unix:///var/run/docker.sock'])[0].id, 'dockerd');
   assert.strictEqual(analyze(['write /x: no space left on device'])[0].fix.tab, 'doctor');
+  assert.strictEqual(analyze(['failed to create network server_backend: Error response from daemon: invalid pool request: Pool overlaps with other one on this address space'])[0].id, 'subnet');
   assert.strictEqual(analyze(['POST /token: HTTP 401 bad'], '')[0].id, 'login');
   assert.deepStrictEqual(analyze(['всё хорошо'], ''), []);
 });
