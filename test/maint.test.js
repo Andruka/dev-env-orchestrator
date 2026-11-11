@@ -169,3 +169,44 @@ test('сети docker: фильтр по подсети compose-файла', asy
     assert.deepStrictEqual(r.skipped, [b]);
   } finally { await run(`docker network rm ${a} ${b}`); }
 });
+
+test('шаг freeSubnets: чужая пустая сеть удаляется, своя остаётся, занятая даёт понятную ошибку', async (t) => {
+  const { run } = require('../lib/proc');
+  if ((await run('docker info')).code !== 0) return t.skip('docker недоступен');
+  const freeSubnets = require('../lib/steps/freeSubnets');
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dpfree-'));
+  fs.writeFileSync(path.join(dir, 'c.yml'), 'networks:\n  backend:\n    ipam:\n      config:\n        - subnet: 10.213.221.0/24\n');
+  const other = `dptest${process.pid}_other`;
+  const lbl = (p, wd) => `--label com.docker.compose.project=${p} --label com.docker.compose.project.working_dir=${wd}`;
+  await run(`docker network create ${lbl('dpother', '/somewhere/else')} --subnet 10.213.221.0/24 ${other}`);
+  const logs = [];
+  const ctx = { cwd: dir, log: m => logs.push(m) };
+  try {
+    await freeSubnets({ composeFile: 'c.yml' }, ctx);
+    assert.ok(logs.some(l => l.includes(other)), 'удаление пустой чужой сети залогировано');
+    assert.notStrictEqual((await run(`docker network inspect ${other}`)).code, 0, 'сеть удалена');
+
+    // сеть самого проекта (working_dir == cwd) не трогаем
+    const own = `dptest${process.pid}_own`;
+    await run(`docker network create ${lbl('dpown', dir)} --subnet 10.213.221.0/24 ${own}`);
+    await freeSubnets({ composeFile: 'c.yml' }, ctx);
+    assert.strictEqual((await run(`docker network inspect ${own}`)).code, 0, 'своя сеть осталась');
+    await run(`docker network rm ${own}`);
+
+    // сеть с работающим контейнером: понятная ошибка, сеть не удалена
+    const img = (await run(`docker images --format '{{.Repository}}'`)).out.split('\n').find(x => x === 'alpine' || x === 'busybox');
+    if (!img) return;
+    const busy = `dptest${process.pid}_busy`, ctr = `dptest${process.pid}_c`;
+    await run(`docker network create ${lbl('dpbusy', '/x')} --subnet 10.213.221.0/24 ${busy}`);
+    await run(`docker run -d --rm --name ${ctr} --network ${busy} ${img} sleep 60`);
+    try {
+      await assert.rejects(freeSubnets({ composeFile: 'c.yml' }, ctx), /занята сетью .*dptest\d+_busy.*контейнеры: dptest\d+_c/);
+    } finally {
+      await run(`docker rm -f ${ctr}`);
+      await run(`docker network rm ${busy}`);
+    }
+  } finally {
+    await run(`docker network rm ${other}`);
+  }
+});

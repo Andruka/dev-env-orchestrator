@@ -212,6 +212,11 @@
           "title": "Остановить и удалить остальные контейнеры",
           "type": "shell",
           "cmd": "docker ps -aq | xargs -r docker stop -t 2 >/dev/null; docker ps -aq | xargs -r docker rm >/dev/null; echo ok"
+        },
+        {
+          "title": "Освободить подсеть docker",
+          "type": "freeSubnets",
+          "composeFile": "{composeFile}"
         }
       ]
     },
@@ -234,6 +239,11 @@
       "hint": "Поднять контейнеры и дождаться миграций (dup)",
       "icon": "play",
       "steps": [
+        {
+          "title": "Освободить подсеть docker",
+          "type": "freeSubnets",
+          "composeFile": "{composeFile}"
+        },
         {
           "title": "docker compose up",
           "type": "service",

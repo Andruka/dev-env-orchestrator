@@ -1,6 +1,6 @@
 {
   "name": "dev-panel",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Локальная веб-панель для рутины разработчика: ветки, docker compose, дампы БД, фронтенд",
   "private": true,
   "license": "UNLICENSED",
